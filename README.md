@@ -36,6 +36,7 @@ Validated on:
 - Device: **Homatics Box 4K Pro V2**
 - Streaming profile: **4K 60 FPS**
 - Frame pacing: **Balanced**
+- Sunshine + Moonlight
 
 Low-latency mode can cause freezes on some affected configurations.
 
