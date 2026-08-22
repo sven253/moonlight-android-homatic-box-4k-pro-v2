@@ -81,6 +81,16 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private boolean foreground = true;
     private PerfOverlayListener perfListener;
     private long lastCodecRenderTimeNanos;
+
+    private volatile boolean affectedAmlogicHevcDecoder;
+    private volatile long lastVideoInputQueuedMs;
+    private volatile long lastVideoOutputDequeuedMs;
+    private volatile boolean hasVideoOutput;
+    private volatile long lastSilentStallRecoveryMs;
+    
+    private static final long AMLOGIC_HEVC_STALL_TIMEOUT_MS = 5000;
+    private static final long AMLOGIC_HEVC_ACTIVE_INPUT_WINDOW_MS = 1000;
+    private static final long AMLOGIC_HEVC_RECOVERY_COOLDOWN_MS = 10000;
     
     private static final int CR_MAX_TRIES = 10;
     private static final int CR_RECOVERY_TYPE_NONE = 0;
@@ -562,6 +572,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // Start the decoder
         videoDecoder.start();
 
+        // A restart creates a new decode timeline. Don't let timestamps from the
+        // previous codec instance trigger a false stall immediately after recovery.
+        hasVideoOutput = false;
+        lastVideoInputQueuedMs = 0;
+        lastVideoOutputDequeuedMs = 0;
+        lastCodecRenderTimeNanos = 0;
+        
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             legacyInputBuffers = videoDecoder.getInputBuffers();
         }
@@ -664,6 +681,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return -3;
         }
 
+        affectedAmlogicHevcDecoder =
+                "video/hevc".equals(mimeType)
+                        && MediaCodecHelper.isHevcLowLatencyBrokenAmlogicDecoder(selectedDecoderInfo);
+        
+        if (affectedAmlogicHevcDecoder) {
+            LimeLog.info("Enabling Amlogic HEVC stall watchdog for " + selectedDecoderInfo.getName());
+        }
+        
         adaptivePlayback = MediaCodecHelper.decoderSupportsAdaptivePlayback(selectedDecoderInfo, mimeType);
         fusedIdrFrame = MediaCodecHelper.decoderSupportsFusedIdrFrame(selectedDecoderInfo, mimeType);
 
@@ -1073,6 +1098,64 @@ lastCodecRenderTimeNanos = renderTimeNanos;
         });
     }
 
+    private boolean requestAmlogicHevcRestart(String reason) {
+        if (!affectedAmlogicHevcDecoder || !foreground || stopping ||
+                codecRecoveryType.get() != CR_RECOVERY_TYPE_NONE) {
+            return false;
+        }
+    
+        long now = SystemClock.uptimeMillis();
+    
+        if (lastSilentStallRecoveryMs != 0 &&
+                now - lastSilentStallRecoveryMs < AMLOGIC_HEVC_RECOVERY_COOLDOWN_MS) {
+            return false;
+        }
+    
+        if (codecRecoveryType.compareAndSet(
+                CR_RECOVERY_TYPE_NONE,
+                CR_RECOVERY_TYPE_RESTART)) {
+    
+            lastSilentStallRecoveryMs = now;
+    
+            LimeLog.warning(
+                    "Amlogic HEVC decoder stall detected (" +
+                    reason +
+                    "); requesting decoder restart");
+    
+            return true;
+        }
+    
+        return false;
+    }
+    
+    private void checkForSilentAmlogicHevcOutputStall() {
+        if (!affectedAmlogicHevcDecoder ||
+                !foreground ||
+                !hasVideoOutput ||
+                stopping ||
+                codecRecoveryType.get() != CR_RECOVERY_TYPE_NONE ||
+                lastVideoInputQueuedMs == 0 ||
+                lastVideoOutputDequeuedMs == 0) {
+            return;
+        }
+    
+        long now = SystemClock.uptimeMillis();
+    
+        long inputGapMs = now - lastVideoInputQueuedMs;
+        long outputGapMs = now - lastVideoOutputDequeuedMs;
+    
+        // Input is still reaching MediaCodec, but decoded output has stopped.
+        // Do not restart for a host/network pause where compressed input also stops.
+        if (inputGapMs <= AMLOGIC_HEVC_ACTIVE_INPUT_WINDOW_MS &&
+                outputGapMs >= AMLOGIC_HEVC_STALL_TIMEOUT_MS) {
+    
+            requestAmlogicHevcRestart(
+                    "input active, no decoder output for " +
+                    outputGapMs +
+                    " ms");
+        }
+    }
+    
     private void startRendererThread()
     {
         rendererThread = new Thread() {
@@ -1084,6 +1167,9 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                         // Try to output a frame
                         int outIndex = videoDecoder.dequeueOutputBuffer(info, 50000);
                         if (outIndex >= 0) {
+                            lastVideoOutputDequeuedMs = SystemClock.uptimeMillis();
+                            hasVideoOutput = true;
+                        
                             long presentationTimeUs = info.presentationTimeUs;
                             int lastIndex = outIndex;
 
@@ -1168,6 +1254,7 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                         } else {
                             switch (outIndex) {
                                 case MediaCodec.INFO_TRY_AGAIN_LATER:
+                                    checkForSilentAmlogicHevcOutputStall();
                                     break;
                                 case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
                                     LimeLog.info("Output format changed");
@@ -1204,8 +1291,27 @@ lastCodecRenderTimeNanos = renderTimeNanos;
 
         try {
             // If we don't have an input buffer index yet, fetch one now
-            while (nextInputBufferIndex < 0 && !stopping) {
+            while (nextInputBufferIndex < 0 &&
+                    !stopping &&
+                    codecRecoveryType.get() == CR_RECOVERY_TYPE_NONE) {
+            
                 nextInputBufferIndex = videoDecoder.dequeueInputBuffer(10000);
+            
+                if (nextInputBufferIndex < 0 &&
+                        affectedAmlogicHevcDecoder &&
+                        SystemClock.uptimeMillis() - startTime >= AMLOGIC_HEVC_STALL_TIMEOUT_MS) {
+            
+                    long stallTimeMs = SystemClock.uptimeMillis() - startTime;
+            
+                    // Allow the input thread to leave this loop and participate in
+                    // Moonlight's existing codec recovery mechanism.
+                    if (requestAmlogicHevcRestart(
+                            "no input buffer for " +
+                            stallTimeMs +
+                            " ms")) {
+                        break;
+                    }
+                }
             }
 
             // Get the backing ByteBuffer for the input buffer index
@@ -1376,7 +1482,11 @@ lastCodecRenderTimeNanos = renderTimeNanos;
             videoDecoder.queueInputBuffer(nextInputBufferIndex,
                     0, nextInputBuffer.position(),
                     timestampUs, codecFlags);
-
+                    
+            if ((codecFlags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                lastVideoInputQueuedMs = SystemClock.uptimeMillis();
+            }
+            
             // We need a new buffer now
             nextInputBufferIndex = -1;
             nextInputBuffer = null;
