@@ -1,12 +1,9 @@
 <p align="center"><strong>Moonlight Android Fork for Homatic Box 4K Pro V2</strong></p>
 
-# Moonlight Android Fork for Mi TV Stick 4K Gen 2 and Mi TV Box S 3rd Gen & Homatic Box 4K Pro V2
+# Based on Moonlight Android Fork for Mi TV Stick 4K Gen 2 and Mi TV Box S 3rd Gen of [Farnsworth3010](https://github.com/farnsworth3010/moonlight-android-mi-tv-stick-gen-2)
 
-![Example stream output](docs/images/example-stream.jpg)
 
-Russian version: [README.ru.md](README.ru.md)
-
-This repository is a fork of **Moonlight Android** with device-focused fixes for **Mi TV Stick 4K Gen 2** and **Mi TV Box S 3rd Gen** & Homatic Box 4K Pro V2, mainly for:
+This repository is a fork of **Moonlight Android Fork of Farnworth3010** with device-focused fixes for **Mi TV Stick 4K Gen 2** and **Mi TV Box S 3rd Gen** mainly for:
 
 - HEVC streaming stability/compatibility (including slideshow fix during HEVC streaming)
 - GPU composition behavior on Android TV
@@ -19,28 +16,9 @@ The fork includes patches around:
 - HEVC decoder/RFI behavior tuning for Android TV
 - **Slideshow (image freezing) fix during HEVC streaming on Xiaomi Mi TV Stick Gen 2 and Mi TV Box S 3rd Gen running Android TV 14**
 - GPU composition forcing logic to reduce stutter scenarios on TV sticks
-- Additional renderer/frame-pacing enhancements 
+- Additional renderer/frame-pacing enhancements
+- Add support for Homatic Box 4K Pro V2
 
-## Download
-
-You can download the app from the [Releases page](https://github.com/farnsworth3010/moonlight-android-mi-tv-stick-gen-2/releases).
-
-The binary APK is built inside the GitHub Actions workflow, so the build process is transparent and reproducible.
-
-## Build instructions
-
-1. Install prerequisites:
-   - Android Studio
-   - Android NDK
-2. Clone this repository.
-3. Initialize submodules:
-   - `git submodule update --init --recursive`
-4. Create `local.properties` in repo root and set your NDK path:
-   - `ndk.dir=...`
-5. Open the project in Android Studio (or use Gradle).
-6. Build APK:
-   - Android Studio: **Build > Build APK(s)**
-   - or CLI: `./gradlew :app:assembleDebug` (Windows: `gradlew.bat :app:assembleDebug`)
 
 ## Default settings in this fork
 
@@ -84,4 +62,4 @@ To reduce latency, it is recommended to:
 
 ## Development note
 
-Just cha
+Just changed AppIcons back to moonlight default and added support for Homatic Box 4K Pro V2
