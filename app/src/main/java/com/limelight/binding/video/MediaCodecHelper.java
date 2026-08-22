@@ -56,6 +56,7 @@ public class MediaCodecHelper {
     // - MDZ-33-AA: Xiaomi TV Stick 4K (2nd Gen)
     // - MiTV-AFMU1: Xiaomi TV Stick 4K (2nd Gen) firmware/device alias
     // - MiTV-AYFR0: Xiaomi Mi TV Box S 3rd gen
+    // - Box 4K V2 / HPH: Homatics Box 4K Pro V2
     private static final String[] HEVC_LOW_LATENCY_BROKEN_MODEL_PATTERNS = {
             "MDZ-33-AA",
             "MDZ-32-AA",    
@@ -525,7 +526,7 @@ public class MediaCodecHelper {
             // Low-latency options break HEVC playback on affected Amlogic-based TV sticks,
             // but realtime codec priority may still improve decoding stability.
             if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                LimeLog.info("Using realtime HEVC priority without low-latency options on affected TV stick model");
+                LimeLog.info("Using realtime HEVC priority without low-latency options on affected Devices");
                 videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
                 return true;
             }
