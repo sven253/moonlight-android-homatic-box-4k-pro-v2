@@ -61,7 +61,9 @@ public class MediaCodecHelper {
             "MDZ-32-AA",    
             "MiTV-AFMU1",
             "MiTV-AYFR0",
-            "MiTV-AFMU0"
+            "MiTV-AFMU0",
+            "Box 4K V2",
+            "HPH"
     };
 
     static {
