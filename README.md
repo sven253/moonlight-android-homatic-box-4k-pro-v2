@@ -1,7 +1,4 @@
-<p align="center">
-  <img src="app/src/main/res/drawable/app_icon.png" alt="Moonlight Android app icon" width="144" />
-</p>
-<p align="center"><strong>Moonlight Android Fork for Mi TV Stick 4K Gen 2 and Mi TV Box S 3rd Gen</strong></p>
+<p align="center"><strong>Moonlight Android Fork for Homatic Box 4K Pro V2</strong></p>
 
 # Moonlight Android Fork for Mi TV Stick 4K Gen 2 and Mi TV Box S 3rd Gen & Homatic Box 4K Pro V2
 
@@ -58,10 +55,9 @@ Current defaults are tuned for the target device profile:
 
 Validated on:
 
-- Device: **Mi TV Stick 4K Gen 2**
-- Streaming profile: **2K 60 FPS**
+- Device: **Homatic Box 4K Pro V2**
+- Streaming profile: **4K 60 FPS**
 - Frame pacing: **Balanced**
-- Tested using **[Vibepollo](https://github.com/Nonary/Vibepollo)**
 
 Low-latency mode can cause freezes on some affected configurations.
 
@@ -77,17 +73,6 @@ To reduce latency, it is recommended to:
 - Enable **Game Mode** on your TV.
 - Disable **Auto Motion Plus** (or equivalent frame interpolation/motion smoothing features).
 
-## Contributing
-
-Issues and pull requests are welcome.
-
-If you reproduce freezes/hangs, please include:
-
-- device model (`Build.MODEL` / `Build.DEVICE`)
-- decoder name 
-- codec/resolution/FPS/frame pacing settings
-- a short reproduction sequence
-
 ## Credits
 
 - [Moonlight Android](https://github.com/moonlight-stream/moonlight-android)
@@ -95,8 +80,8 @@ If you reproduce freezes/hangs, please include:
 - [Vibepollo](https://github.com/Nonary/Vibepollo)
 - [Nun-z/moonlight-android](https://github.com/Nun-z/moonlight-android)
 - [Viktsolovevwork278/moonlight-android-hevc-fix](https://github.com/Viktsolovevwork278/moonlight-android-hevc-fix)
+- [Farnsworth3010/moonlight-android-mi-tv-stick-gen-2](https://github.com/farnsworth3010/moonlight-android-mi-tv-stick-gen-2)
 
 ## Development note
 
-GitHub Copilot was used during development.  
-All resulting changes were manually reviewed and tested by a human software engineer.
+Just cha
