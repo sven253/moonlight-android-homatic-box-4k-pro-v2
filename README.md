@@ -3,7 +3,7 @@
 # Based on Moonlight Android Fork for Mi TV Stick 4K Gen 2 and Mi TV Box S 3rd Gen of [Farnsworth3010](https://github.com/farnsworth3010/moonlight-android-mi-tv-stick-gen-2)
 
 
-This repository is a fork of **Moonlight Android Fork of Farnworth3010** with device-focused fixes for **Mi TV Stick 4K Gen 2** and **Mi TV Box S 3rd Gen** mainly for:
+This repository is a fork of **Moonlight Android Fork of Farnsworth3010** with device-focused fixes for **Mi TV Stick 4K Gen 2** and **Mi TV Box S 3rd Gen** mainly for:
 
 - HEVC streaming stability/compatibility (including slideshow fix during HEVC streaming)
 - GPU composition behavior on Android TV
@@ -33,7 +33,7 @@ Current defaults are tuned for the target device profile:
 
 Validated on:
 
-- Device: **Homatic Box 4K Pro V2**
+- Device: **Homatics Box 4K Pro V2**
 - Streaming profile: **4K 60 FPS**
 - Frame pacing: **Balanced**
 
