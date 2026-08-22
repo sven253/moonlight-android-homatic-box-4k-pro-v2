@@ -1,4 +1,4 @@
-<p align="center"><strong>Moonlight Android Fork for Homatic Box 4K Pro V2</strong></p>
+<p align="center"><strong>Moonlight Android Fork for Homatics Box 4K Pro V2</strong></p>
 
 # Based on Moonlight Android Fork for Mi TV Stick 4K Gen 2 and Mi TV Box S 3rd Gen of [Farnsworth3010](https://github.com/farnsworth3010/moonlight-android-mi-tv-stick-gen-2)
 
@@ -17,7 +17,7 @@ The fork includes patches around:
 - **Slideshow (image freezing) fix during HEVC streaming on Xiaomi Mi TV Stick Gen 2 and Mi TV Box S 3rd Gen running Android TV 14**
 - GPU composition forcing logic to reduce stutter scenarios on TV sticks
 - Additional renderer/frame-pacing enhancements
-- Add support for Homatic Box 4K Pro V2
+- Add support for Homatics Box 4K Pro V2
 
 
 ## Default settings in this fork
@@ -40,9 +40,11 @@ Validated on:
 Low-latency mode can cause freezes on some affected configurations.
 
 ## Known issues
-
+Mi TV Stick / Box:
 - Streaming can still hang at random times (root cause is not fully understood).
 - Smoothness may degrade when the large performance stats overlay is enabled.
+
+Homatics:
 
 ## TV settings recommendations
 
@@ -62,4 +64,4 @@ To reduce latency, it is recommended to:
 
 ## Development note
 
-Just changed AppIcons back to moonlight default and added support for Homatic Box 4K Pro V2
+Just changed AppIcons back to moonlight default and added support for Homatics Box 4K Pro V2
