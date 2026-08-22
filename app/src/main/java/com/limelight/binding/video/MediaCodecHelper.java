@@ -516,12 +516,18 @@ public class MediaCodecHelper {
         return false;
     }
 
+    public static boolean isHevcLowLatencyBrokenAmlogicDecoder(MediaCodecInfo decoderInfo) {
+        return decoderInfo != null
+                && "c2.amlogic.hevc.decoder".equalsIgnoreCase(decoderInfo.getName())
+                && (isHevcLowLatencyBrokenModel(Build.MODEL)
+                    || isHevcLowLatencyBrokenModel(Build.DEVICE));
+    }
+    
     public static boolean setDecoderLowLatencyOptions(MediaFormat videoFormat, MediaCodecInfo decoderInfo, int tryNumber) {
         boolean isAffectedHevcDecoder =
                 "video/hevc".equals(videoFormat.getString(MediaFormat.KEY_MIME))
-                        && "c2.amlogic.hevc.decoder".equalsIgnoreCase(decoderInfo.getName())
-                        && (isHevcLowLatencyBrokenModel(Build.MODEL) || isHevcLowLatencyBrokenModel(Build.DEVICE));
-
+                        && isHevcLowLatencyBrokenAmlogicDecoder(decoderInfo);
+        
         if (isAffectedHevcDecoder) {
             // Low-latency options break HEVC playback on affected Amlogic-based TV sticks,
             // but realtime codec priority may still improve decoding stability.
