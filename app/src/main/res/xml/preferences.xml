@@ -273,7 +273,7 @@
             android:key="checkbox_enable_android_tv_force_gpu_composition"
             android:title="@string/title_checkbox_enable_android_tv_force_gpu_composition"
             android:summary="@string/summary_checkbox_enable_android_tv_force_gpu_composition"
-            android:defaultValue="true"/>
+            android:defaultValue="false"/>
         <CheckBoxPreference
             android:key="checkbox_enable_post_stream_toast"
             android:title="@string/title_enable_post_stream_toast"
