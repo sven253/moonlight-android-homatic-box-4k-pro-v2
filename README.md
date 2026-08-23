@@ -28,7 +28,7 @@ Current defaults are tuned for the target device profile:
 - Resolution: **Full HD (1920x1080)**
 - Codec preference: **HEVC**
 - Frame pacing: **Balanced**
-- Android TV force GPU composition: **Enabled**
+- Android TV force GPU composition: **Disabled**
 
 ## Tested configuration
 
@@ -37,16 +37,18 @@ Validated on:
 - Device: **Homatics Box 4K Pro V2**
 - Streaming profile: **4K 60 FPS**
 - Frame pacing: **Balanced**
+- Android TV force GPU composition: **Disabled**
 - Sunshine + Moonlight
 
 Low-latency mode can cause freezes on some affected configurations.
 
 ## Known issues
 Mi TV Stick / Box:
-- Streaming can still hang at random times (root cause is not fully understood).
+- Streaming can still hang at random times.
 - Smoothness may degrade when the large performance stats overlay is enabled.
 
-Homatics: (still testig)
+Homatics:
+- Streaming can still hang at random times
 
 ## TV settings recommendations
 
@@ -68,4 +70,4 @@ To reduce latency, it is recommended to:
 In the release verison i hust changed AppIcons back to moonlight default and added support for Homatics Box 4K Pro V2.
 
 Beta:
-I added a watchdog to detect freezes and restart the decoder and added this patch https://github.com/moonlight-stream/moonlight-common-c/pull/147 coded with Ai
+I added a watchdog to detect freezes and restart the decoder and added this patch https://github.com/moonlight-stream/moonlight-common-c/pull/147 coded with Ai. No known issues with beta but still testig!
