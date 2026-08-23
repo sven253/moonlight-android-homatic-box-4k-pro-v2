@@ -70,4 +70,4 @@ To reduce latency, it is recommended to:
 In the release verison i hust changed AppIcons back to moonlight default and added support for Homatics Box 4K Pro V2.
 
 ## Beta
-**I added a watchdog to detect freezes and restart the decoder and added this patch https://github.com/moonlight-stream/moonlight-common-c/pull/147. Coded with Ai. No known issues with beta but still testig!**
+I added a watchdog to detect freezes and restart the decoder and added this patch https://github.com/moonlight-stream/moonlight-common-c/pull/147. Coded with Ai. No known issues with beta but still testig! Android TV force GPU composition have to be disabled to stop freezes.
