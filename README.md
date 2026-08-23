@@ -14,7 +14,7 @@ The fork includes patches around:
 
 - HEVC low-latency decoder option handling on affected Xiaomi/Amlogic devices 
 - HEVC decoder/RFI behavior tuning for Android TV
-- **Slideshow (image freezing) fix during HEVC streaming on Xiaomi Mi TV Stick Gen 2 and Mi TV Box S 3rd Gen running Android TV 14**
+- **Slideshow (image freezing) fix during HEVC streaming on Xiaomi Mi TV Stick Gen 2, Mi TV Box S 3rd Gen running Android TV 14 and Homatics Box 4K Pro V2**
 - GPU composition forcing logic to reduce stutter scenarios on TV sticks
 - Additional renderer/frame-pacing enhancements
 - Add support for Homatics Box 4K Pro V2
