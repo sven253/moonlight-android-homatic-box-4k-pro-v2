@@ -85,7 +85,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private volatile boolean affectedAmlogicHevcDecoder;
     private volatile long lastVideoInputQueuedMs;
     private volatile long lastVideoOutputDequeuedMs;
-    private volatile boolean hasVideoOutput;
+    private volatile long firstVideoInputAfterDecoderStartMs;
     private volatile long lastSilentStallRecoveryMs;
     
     private static final long AMLOGIC_HEVC_STALL_TIMEOUT_MS = 5000;
@@ -572,11 +572,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // Start the decoder
         videoDecoder.start();
 
-        // A restart creates a new decode timeline. Don't let timestamps from the
-        // previous codec instance trigger a false stall immediately after recovery.
-        hasVideoOutput = false;
+        // A decoder start/restart creates a new decode timeline.
+        // The watchdog starts counting only after the first real video input
+        // has been queued to the new decoder instance.
         lastVideoInputQueuedMs = 0;
         lastVideoOutputDequeuedMs = 0;
+        firstVideoInputAfterDecoderStartMs = 0;
         lastCodecRenderTimeNanos = 0;
         
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
@@ -1131,18 +1132,26 @@ lastCodecRenderTimeNanos = renderTimeNanos;
     private void checkForSilentAmlogicHevcOutputStall() {
         if (!affectedAmlogicHevcDecoder ||
                 !foreground ||
-                !hasVideoOutput ||
                 stopping ||
                 codecRecoveryType.get() != CR_RECOVERY_TYPE_NONE ||
                 lastVideoInputQueuedMs == 0 ||
-                lastVideoOutputDequeuedMs == 0) {
+                firstVideoInputAfterDecoderStartMs == 0) {
             return;
         }
     
         long now = SystemClock.uptimeMillis();
-    
+        
         long inputGapMs = now - lastVideoInputQueuedMs;
-        long outputGapMs = now - lastVideoOutputDequeuedMs;
+        
+        // If the decoder has already produced output, measure from the most recent
+        // decoded frame. Otherwise, measure from the first real video input that
+        // was queued after this decoder instance was started.
+        long outputBaselineMs =
+                lastVideoOutputDequeuedMs != 0
+                        ? lastVideoOutputDequeuedMs
+                        : firstVideoInputAfterDecoderStartMs;
+        
+        long outputGapMs = now - outputBaselineMs;
     
         // Input is still reaching MediaCodec, but decoded output has stopped.
         // Do not restart for a host/network pause where compressed input also stops.
@@ -1168,7 +1177,6 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                         int outIndex = videoDecoder.dequeueOutputBuffer(info, 50000);
                         if (outIndex >= 0) {
                             lastVideoOutputDequeuedMs = SystemClock.uptimeMillis();
-                            hasVideoOutput = true;
                         
                             long presentationTimeUs = info.presentationTimeUs;
                             int lastIndex = outIndex;
@@ -1484,7 +1492,13 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                     timestampUs, codecFlags);
                     
             if ((codecFlags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
-                lastVideoInputQueuedMs = SystemClock.uptimeMillis();
+                long now = SystemClock.uptimeMillis();
+            
+                lastVideoInputQueuedMs = now;
+            
+                if (firstVideoInputAfterDecoderStartMs == 0) {
+                    firstVideoInputAfterDecoderStartMs = now;
+                }
             }
             
             // We need a new buffer now
