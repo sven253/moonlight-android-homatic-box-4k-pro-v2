@@ -64,5 +64,6 @@ To reduce latency, it is recommended to:
 - [Farnsworth3010/moonlight-android-mi-tv-stick-gen-2](https://github.com/farnsworth3010/moonlight-android-mi-tv-stick-gen-2)
 
 ## Development note
+In the release verison i hust changed AppIcons back to moonlight default and added support for Homatics Box 4K Pro V2.
 
-Just changed AppIcons back to moonlight default and added support for Homatics Box 4K Pro V2
+Beta: i added a watchdog to detect freezes and restart the decoder and added this patch https://github.com/moonlight-stream/moonlight-common-c/pull/147
