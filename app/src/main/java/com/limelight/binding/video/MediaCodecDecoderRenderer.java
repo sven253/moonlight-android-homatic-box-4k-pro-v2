@@ -87,6 +87,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private volatile long lastVideoOutputDequeuedMs;
     private volatile long firstVideoInputAfterDecoderStartMs;
     private volatile long lastSilentStallRecoveryMs;
+    private volatile boolean watchdogRecoveryRequested;
     
     private static final long AMLOGIC_HEVC_STALL_TIMEOUT_MS = 5000;
     private static final long AMLOGIC_HEVC_ACTIVE_INPUT_WINDOW_MS = 1000;
@@ -792,15 +793,21 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                     }
                 }
 
-                // We don't count flushes as codec recovery attempts
+                // Watchdog-initiated recoveries should not consume the recovery budget
+                // reserved for actual MediaCodec exceptions.
                 if (codecRecoveryType.get() != CR_RECOVERY_TYPE_NONE) {
-                    codecRecoveryAttempts++;
-                    LimeLog.info("Codec recovery attempt: "+codecRecoveryAttempts);
+                    if (watchdogRecoveryRequested) {
+                        LimeLog.info("Amlogic watchdog decoder recovery");
+                    }
+                    else {
+                        codecRecoveryAttempts++;
+                        LimeLog.info("Codec recovery attempt: " + codecRecoveryAttempts);
+                    }
                 }
 
-                // For "recoverable" exceptions, we can just stop, reconfigure, and restart.
+                // For restart recovery, stop, reconfigure, and restart the existing codec instance.
                 if (codecRecoveryType.get() == CR_RECOVERY_TYPE_RESTART) {
-                    LimeLog.warning("Trying to restart decoder after CodecException");
+                    LimeLog.warning("Trying to restart decoder during codec recovery");
                     try {
                         videoDecoder.stop();
                         configureAndStartDecoder(configuredFormat);
@@ -820,10 +827,10 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                     }
                 }
 
-                // For "non-recoverable" exceptions on L+, we can call reset() to recover
-                // without having to recreate the entire decoder again.
+                // For reset recovery on L+, reset and reconfigure the existing codec instance
+                // without having to recreate the decoder.
                 if (codecRecoveryType.get() == CR_RECOVERY_TYPE_RESET && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    LimeLog.warning("Trying to reset decoder after CodecException");
+                    LimeLog.warning("Trying to reset decoder during codec recovery");
                     try {
                         videoDecoder.reset();
                         configureAndStartDecoder(configuredFormat);
@@ -845,7 +852,7 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                 // If we _still_ haven't managed to recover, go for the nuclear option and just
                 // throw away the old decoder and reinitialize a new one from scratch.
                 if (codecRecoveryType.get() == CR_RECOVERY_TYPE_RESET) {
-                    LimeLog.warning("Trying to recreate decoder after CodecException");
+                    LimeLog.warning("Trying to recreate decoder during codec recovery");
                     videoDecoder.release();
 
                     try {
@@ -869,7 +876,10 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                         throw new RendererException(this, e);
                     }
                 }
-
+                
+                // The current recovery cycle is complete.
+                watchdogRecoveryRequested = false;
+                
                 // Wake all quiesced threads and allow them to begin work again
                 codecRecoveryThreadQuiescedFlags = 0;
                 codecRecoveryMonitor.notifyAll();
@@ -918,6 +928,8 @@ lastCodecRenderTimeNanos = renderTimeNanos;
 
             // We can attempt a recovery or reset at this stage to try to start decoding again
             if (codecRecoveryAttempts < CR_MAX_TRIES) {
+                // A real MediaCodec exception now owns this recovery.
+                watchdogRecoveryRequested = false;
                 // If the exception is non-recoverable or we already require a reset, perform a reset.
                 // If we have no prior unrecoverable failure, we will try a restart instead.
                 if (codecExc.isRecoverable()) {
@@ -961,6 +973,9 @@ lastCodecRenderTimeNanos = renderTimeNanos;
             //
             // NB: CodecException is an IllegalStateException, so we must check for it first.
             if (codecRecoveryAttempts < CR_MAX_TRIES) {
+                // A real MediaCodec failure now owns this recovery.
+                watchdogRecoveryRequested = false;
+                
                 if (codecRecoveryType.compareAndSet(CR_RECOVERY_TYPE_NONE, CR_RECOVERY_TYPE_RESET)) {
                     LimeLog.info("Decoder requires reset for IllegalStateException");
                     e.printStackTrace();
@@ -1112,18 +1127,21 @@ lastCodecRenderTimeNanos = renderTimeNanos;
             return false;
         }
     
-        if (codecRecoveryType.compareAndSet(
-                CR_RECOVERY_TYPE_NONE,
-                CR_RECOVERY_TYPE_RESTART)) {
-    
-            lastSilentStallRecoveryMs = now;
-    
-            LimeLog.warning(
-                    "Amlogic HEVC decoder stall detected (" +
-                    reason +
-                    "); requesting decoder restart");
-    
-            return true;
+        synchronized (codecRecoveryMonitor) {
+            if (codecRecoveryType.compareAndSet(
+                    CR_RECOVERY_TYPE_NONE,
+                    CR_RECOVERY_TYPE_RESTART)) {
+        
+                watchdogRecoveryRequested = true;
+                lastSilentStallRecoveryMs = now;
+        
+                LimeLog.warning(
+                        "Amlogic HEVC decoder stall detected (" +
+                        reason +
+                        "); requesting decoder restart");
+        
+                return true;
+            }
         }
     
         return false;
