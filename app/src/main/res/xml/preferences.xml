@@ -270,6 +270,11 @@
             android:dependency="checkbox_enable_perf_overlay"
             android:defaultValue="false"/>
         <CheckBoxPreference
+            android:key="checkbox_enable_low_latency_fix"
+            android:title="@string/title_checkbox_enable_low_latency_fix"
+            android:summary="@string/summary_checkbox_enable_low_latency_fix"
+            android:defaultValue="true"/>
+        <CheckBoxPreference
             android:key="checkbox_enable_android_tv_force_gpu_composition"
             android:title="@string/title_checkbox_enable_android_tv_force_gpu_composition"
             android:summary="@string/summary_checkbox_enable_android_tv_force_gpu_composition"

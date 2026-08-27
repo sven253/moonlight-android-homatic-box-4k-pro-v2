@@ -682,12 +682,22 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return -3;
         }
 
+        // Apply the user's low-latency fix preference before the decoder is configured.
+        // This must happen before setDecoderLowLatencyOptions() is called below.
+        MediaCodecHelper.setHevcLowLatencyFixEnabled(prefs == null || prefs.enableLowLatencyFix);
+
+        // NB: The stall watchdog stays armed based on the device match alone, independent
+        // of the fix preference. If the user disables the fix to experiment with lower
+        // decode times, the watchdog is the safety net that recovers from the resulting
+        // freezes / 0 FPS states without requiring an app restart.
         affectedAmlogicHevcDecoder =
                 "video/hevc".equals(mimeType)
                         && MediaCodecHelper.isHevcLowLatencyBrokenAmlogicDecoder(selectedDecoderInfo);
         
         if (affectedAmlogicHevcDecoder) {
-            LimeLog.info("Enabling Amlogic HEVC stall watchdog for " + selectedDecoderInfo.getName());
+            LimeLog.info("Enabling Amlogic HEVC stall watchdog for " + selectedDecoderInfo.getName() +
+                    " (low-latency fix " +
+                    (MediaCodecHelper.isHevcLowLatencyFixEnabled() ? "enabled" : "disabled") + ")");
         }
         
         adaptivePlayback = MediaCodecHelper.decoderSupportsAdaptivePlayback(selectedDecoderInfo, mimeType);

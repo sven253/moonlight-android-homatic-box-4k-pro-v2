@@ -51,6 +51,7 @@ public class PreferenceConfiguration {
     private static final String ENABLE_PERF_OVERLAY_STRING = "checkbox_enable_perf_overlay";
     private static final String ENABLE_PERF_OVERLAY_MINI_STRING = "checkbox_enable_perf_overlay_mini";
     private static final String ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION_STRING = "checkbox_enable_android_tv_force_gpu_composition";
+    private static final String ENABLE_LOW_LATENCY_FIX_STRING = "checkbox_enable_low_latency_fix";
     private static final String BIND_ALL_USB_STRING = "checkbox_usb_bind_all";
     private static final String MOUSE_EMULATION_STRING = "checkbox_mouse_emulation";
     private static final String ANALOG_SCROLLING_PREF_STRING = "analog_scrolling";
@@ -92,6 +93,7 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_ENABLE_PERF_OVERLAY = false;
     private static final boolean DEFAULT_ENABLE_PERF_OVERLAY_MINI = false;
     private static final boolean DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION = false;
+    private static final boolean DEFAULT_ENABLE_LOW_LATENCY_FIX = true;
     private static final boolean DEFAULT_BIND_ALL_USB = false;
     private static final boolean DEFAULT_MOUSE_EMULATION = true;
     private static final String DEFAULT_ANALOG_STICK_FOR_SCROLLING = "right";
@@ -142,6 +144,7 @@ public class PreferenceConfiguration {
     public boolean enablePerfOverlay;
     public boolean enablePerfOverlayMini;
     public boolean enableAndroidTvForceGpuComposition;
+    public boolean enableLowLatencyFix;
     public boolean enableLatencyToast;
     public boolean bindAllUsb;
     public boolean mouseEmulation;
@@ -594,6 +597,9 @@ public class PreferenceConfiguration {
         config.enableAndroidTvForceGpuComposition = prefs.getBoolean(
                 ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION_STRING,
                 DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION);
+        config.enableLowLatencyFix = prefs.getBoolean(
+                ENABLE_LOW_LATENCY_FIX_STRING,
+                DEFAULT_ENABLE_LOW_LATENCY_FIX);
         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);
         config.mouseNavButtons = prefs.getBoolean(MOUSE_NAV_BUTTONS_STRING, DEFAULT_MOUSE_NAV_BUTTONS);

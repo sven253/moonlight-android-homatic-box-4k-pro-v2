@@ -49,6 +49,11 @@ public class MediaCodecHelper {
             Build.HARDWARE.equals("ranchu") || Build.HARDWARE.equals("cheets") || Build.BRAND.equals("Android-x86");
 
     private static boolean isAmlogicRfiSafe = false;
+    // Controls whether low-latency decoder options are suppressed on affected
+    // Amlogic HEVC decoders (the "low-latency fix"). Set from user preferences
+    // before decoder configuration. Defaults to enabled to preserve the fork's
+    // established anti-freeze behavior.
+    private static volatile boolean hevcLowLatencyFixEnabled = true;
     private static boolean isLowEndSnapdragon = false;
     private static boolean isAdreno620 = false;
     private static boolean initialized = false;
@@ -522,10 +527,24 @@ public class MediaCodecHelper {
                 && (isHevcLowLatencyBrokenModel(Build.MODEL)
                     || isHevcLowLatencyBrokenModel(Build.DEVICE));
     }
-    
+
+    // Called before decoder configuration to apply the user's preference.
+    // When disabled, affected Amlogic devices go through the normal upstream
+    // low-latency option ladder (which may reduce decode time but can cause
+    // freezes / black screens on some firmware).
+    public static void setHevcLowLatencyFixEnabled(boolean enabled) {
+        hevcLowLatencyFixEnabled = enabled;
+        LimeLog.info("Amlogic HEVC low-latency fix " + (enabled ? "enabled" : "disabled") + " by preference");
+    }
+
+    public static boolean isHevcLowLatencyFixEnabled() {
+        return hevcLowLatencyFixEnabled;
+    }
+
     public static boolean setDecoderLowLatencyOptions(MediaFormat videoFormat, MediaCodecInfo decoderInfo, int tryNumber) {
         boolean isAffectedHevcDecoder =
-                "video/hevc".equals(videoFormat.getString(MediaFormat.KEY_MIME))
+                hevcLowLatencyFixEnabled
+                        && "video/hevc".equals(videoFormat.getString(MediaFormat.KEY_MIME))
                         && isHevcLowLatencyBrokenAmlogicDecoder(decoderInfo);
         
         if (isAffectedHevcDecoder) {

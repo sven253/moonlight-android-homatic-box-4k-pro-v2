@@ -256,6 +256,8 @@
     <string name="summary_checkbox_enable_perf_overlay_mini">Display compact performance information</string>
     <string name="title_checkbox_enable_android_tv_force_gpu_composition">Force GPU composition (Android TV)</string>
     <string name="summary_checkbox_enable_android_tv_force_gpu_composition">Fixes frame sync issues on some Android TV devices by forcing GPU composition updates.</string>
+    <string name="title_checkbox_enable_low_latency_fix">Amlogic HEVC freeze fix</string>
+    <string name="summary_checkbox_enable_low_latency_fix">Disables decoder low-latency options on affected Amlogic devices (Homatics Box 4K Pro V2, Mi TV Stick/Box) to prevent freezes and black screens during HEVC streaming. Turning this off enables low-latency mode for reduced decoding time, but may cause the stream to freeze or show 0 FPS. Takes effect on the next stream.</string>
     <string name="title_enable_post_stream_toast">Show latency message after streaming</string>
     <string name="summary_enable_post_stream_toast">Display a latency information message after the stream ends</string>
 
