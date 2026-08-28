@@ -49,11 +49,16 @@ public class MediaCodecHelper {
             Build.HARDWARE.equals("ranchu") || Build.HARDWARE.equals("cheets") || Build.BRAND.equals("Android-x86");
 
     private static boolean isAmlogicRfiSafe = false;
-    // Controls whether low-latency decoder options are suppressed on affected
-    // Amlogic HEVC decoders (the "low-latency fix"). Set from user preferences
-    // before decoder configuration. Defaults to enabled to preserve the fork's
-    // established anti-freeze behavior.
-    private static volatile boolean hevcLowLatencyFixEnabled = true;
+    // Controls how low-latency decoder options are applied on affected Amlogic
+    // HEVC decoders (the "low-latency fix"). Set from user preferences before
+    // decoder configuration. Values mirror PreferenceConfiguration.LOW_LATENCY_FIX_MODE_*.
+    // Defaults to SAFE to preserve the fork's established anti-freeze behavior.
+    public static final int LL_FIX_MODE_SAFE = 0;
+    public static final int LL_FIX_MODE_KEY_LOW_LATENCY = 1;
+    public static final int LL_FIX_MODE_VDEC_LOWLATENCY = 2;
+    public static final int LL_FIX_MODE_VENDOR_LOW_LATENCY = 3;
+    public static final int LL_FIX_MODE_OFF = 4;
+    private static volatile int hevcLowLatencyFixMode = LL_FIX_MODE_SAFE;
     private static boolean isLowEndSnapdragon = false;
     private static boolean isAdreno620 = false;
     private static boolean initialized = false;
@@ -529,34 +534,104 @@ public class MediaCodecHelper {
     }
 
     // Called before decoder configuration to apply the user's preference.
-    // When disabled, affected Amlogic devices go through the normal upstream
-    // low-latency option ladder (which may reduce decode time but can cause
-    // freezes / black screens on some firmware).
-    public static void setHevcLowLatencyFixEnabled(boolean enabled) {
-        hevcLowLatencyFixEnabled = enabled;
-        LimeLog.info("Amlogic HEVC low-latency fix " + (enabled ? "enabled" : "disabled") + " by preference");
+    // SAFE suppresses all low-latency options on affected Amlogic devices.
+    // The three test modes each enable exactly one low-latency option so the
+    // toxic one can be identified by bisection. OFF restores the full upstream
+    // option ladder (which may cause freezes / black screens on some firmware).
+    public static void setHevcLowLatencyFixMode(int mode) {
+        hevcLowLatencyFixMode = mode;
+        LimeLog.info("Amlogic HEVC low-latency fix mode set to " + getHevcLowLatencyFixModeName() + " by preference");
     }
 
-    public static boolean isHevcLowLatencyFixEnabled() {
-        return hevcLowLatencyFixEnabled;
+    public static String getHevcLowLatencyFixModeName() {
+        switch (hevcLowLatencyFixMode) {
+            case LL_FIX_MODE_KEY_LOW_LATENCY:
+                return "KEY_LOW_LATENCY only";
+            case LL_FIX_MODE_VDEC_LOWLATENCY:
+                return "vdec-lowlatency only";
+            case LL_FIX_MODE_VENDOR_LOW_LATENCY:
+                return "vendor.low-latency.enable only";
+            case LL_FIX_MODE_OFF:
+                return "disabled (full upstream ladder)";
+            case LL_FIX_MODE_SAFE:
+            default:
+                return "safe (no low-latency options)";
+        }
+    }
+
+    // Fallback for the bisection test modes: if configure() rejected the single
+    // low-latency option on try 0, retry with realtime priority only before
+    // giving up on low-latency options entirely.
+    private static boolean applyPriorityOnlyFallback(MediaFormat videoFormat, int tryNumber) {
+        if (tryNumber == 1 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            LimeLog.info("LL fix bisection: falling back to realtime priority only");
+            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+            return true;
+        }
+        return false;
     }
 
     public static boolean setDecoderLowLatencyOptions(MediaFormat videoFormat, MediaCodecInfo decoderInfo, int tryNumber) {
         boolean isAffectedHevcDecoder =
-                hevcLowLatencyFixEnabled
-                        && "video/hevc".equals(videoFormat.getString(MediaFormat.KEY_MIME))
+                "video/hevc".equals(videoFormat.getString(MediaFormat.KEY_MIME))
                         && isHevcLowLatencyBrokenAmlogicDecoder(decoderInfo);
-        
-        if (isAffectedHevcDecoder) {
-            // Low-latency options break HEVC playback on affected Amlogic-based TV sticks,
-            // but realtime codec priority may still improve decoding stability.
-            if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                LimeLog.info("Using realtime HEVC priority without low-latency options on affected Devices");
-                videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
-                return true;
-            }
 
-            return false;
+        if (isAffectedHevcDecoder) {
+            switch (hevcLowLatencyFixMode) {
+                case LL_FIX_MODE_OFF:
+                    // Fix disabled: fall through to the normal upstream option
+                    // ladder below, exactly as if this were an unaffected device.
+                    LimeLog.info("LL fix disabled: using full upstream low-latency ladder (try " + tryNumber + ")");
+                    break;
+
+                case LL_FIX_MODE_KEY_LOW_LATENCY:
+                    // Bisection: only the official Android 11+ low latency option.
+                    if (tryNumber == 0) {
+                        LimeLog.info("LL fix bisection: trying KEY_LOW_LATENCY only");
+                        videoFormat.setInteger("low-latency", 1);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                        }
+                        return true;
+                    }
+                    return applyPriorityOnlyFallback(videoFormat, tryNumber);
+
+                case LL_FIX_MODE_VDEC_LOWLATENCY:
+                    // Bisection: only the legacy ACodec vdec-lowlatency option.
+                    if (tryNumber == 0) {
+                        LimeLog.info("LL fix bisection: trying vdec-lowlatency only");
+                        videoFormat.setInteger("vdec-lowlatency", 1);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                        }
+                        return true;
+                    }
+                    return applyPriorityOnlyFallback(videoFormat, tryNumber);
+
+                case LL_FIX_MODE_VENDOR_LOW_LATENCY:
+                    // Bisection: only the Amlogic vendor extension. Vendor-defined
+                    // format keys require Android 8.0+.
+                    if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        LimeLog.info("LL fix bisection: trying vendor.low-latency.enable only");
+                        videoFormat.setInteger("vendor.low-latency.enable", 1);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                        }
+                        return true;
+                    }
+                    return applyPriorityOnlyFallback(videoFormat, tryNumber);
+
+                case LL_FIX_MODE_SAFE:
+                default:
+                    // Low-latency options break HEVC playback on affected Amlogic-based TV sticks,
+                    // but realtime codec priority may still improve decoding stability.
+                    if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        LimeLog.info("Using realtime HEVC priority without low-latency options on affected Devices");
+                        videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                        return true;
+                    }
+                    return false;
+            }
         }
 
         // Options here should be tried in the order of most to least risky. The decoder will use

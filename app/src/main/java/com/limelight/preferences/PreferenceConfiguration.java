@@ -51,7 +51,8 @@ public class PreferenceConfiguration {
     private static final String ENABLE_PERF_OVERLAY_STRING = "checkbox_enable_perf_overlay";
     private static final String ENABLE_PERF_OVERLAY_MINI_STRING = "checkbox_enable_perf_overlay_mini";
     private static final String ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION_STRING = "checkbox_enable_android_tv_force_gpu_composition";
-    private static final String ENABLE_LOW_LATENCY_FIX_STRING = "checkbox_enable_low_latency_fix";
+    private static final String ENABLE_LOW_LATENCY_FIX_STRING = "checkbox_enable_low_latency_fix"; // legacy key, migrated
+    private static final String LOW_LATENCY_FIX_MODE_STRING = "list_low_latency_fix_mode";
     private static final String BIND_ALL_USB_STRING = "checkbox_usb_bind_all";
     private static final String MOUSE_EMULATION_STRING = "checkbox_mouse_emulation";
     private static final String ANALOG_SCROLLING_PREF_STRING = "analog_scrolling";
@@ -94,6 +95,15 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_ENABLE_PERF_OVERLAY_MINI = false;
     private static final boolean DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION = false;
     private static final boolean DEFAULT_ENABLE_LOW_LATENCY_FIX = true;
+    private static final String DEFAULT_LOW_LATENCY_FIX_MODE = "safe";
+
+    // Low-latency fix modes for affected Amlogic HEVC decoders.
+    // Values match the entryValues of list_low_latency_fix_mode.
+    public static final int LOW_LATENCY_FIX_MODE_SAFE = 0;              // fix on: no low-latency options at all
+    public static final int LOW_LATENCY_FIX_MODE_KEY_LOW_LATENCY = 1;   // test: official KEY_LOW_LATENCY only
+    public static final int LOW_LATENCY_FIX_MODE_VDEC_LOWLATENCY = 2;   // test: vdec-lowlatency only
+    public static final int LOW_LATENCY_FIX_MODE_VENDOR_LOW_LATENCY = 3;// test: vendor.low-latency.enable only
+    public static final int LOW_LATENCY_FIX_MODE_OFF = 4;              // fix off: full upstream option ladder
     private static final boolean DEFAULT_BIND_ALL_USB = false;
     private static final boolean DEFAULT_MOUSE_EMULATION = true;
     private static final String DEFAULT_ANALOG_STICK_FOR_SCROLLING = "right";
@@ -144,7 +154,7 @@ public class PreferenceConfiguration {
     public boolean enablePerfOverlay;
     public boolean enablePerfOverlayMini;
     public boolean enableAndroidTvForceGpuComposition;
-    public boolean enableLowLatencyFix;
+    public int lowLatencyFixMode;
     public boolean enableLatencyToast;
     public boolean bindAllUsb;
     public boolean mouseEmulation;
@@ -597,9 +607,31 @@ public class PreferenceConfiguration {
         config.enableAndroidTvForceGpuComposition = prefs.getBoolean(
                 ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION_STRING,
                 DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION);
-        config.enableLowLatencyFix = prefs.getBoolean(
-                ENABLE_LOW_LATENCY_FIX_STRING,
-                DEFAULT_ENABLE_LOW_LATENCY_FIX);
+        // Migration: honor the legacy on/off checkbox if the user never touched the new list.
+        String llFixDefault = DEFAULT_LOW_LATENCY_FIX_MODE;
+        if (!prefs.contains(LOW_LATENCY_FIX_MODE_STRING) && prefs.contains(ENABLE_LOW_LATENCY_FIX_STRING)) {
+            llFixDefault = prefs.getBoolean(ENABLE_LOW_LATENCY_FIX_STRING, DEFAULT_ENABLE_LOW_LATENCY_FIX)
+                    ? "safe" : "off";
+        }
+        String llFixModeValue = prefs.getString(LOW_LATENCY_FIX_MODE_STRING, llFixDefault);
+        switch (llFixModeValue) {
+            case "key_low_latency":
+                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_KEY_LOW_LATENCY;
+                break;
+            case "vdec_lowlatency":
+                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_VDEC_LOWLATENCY;
+                break;
+            case "vendor_low_latency":
+                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_VENDOR_LOW_LATENCY;
+                break;
+            case "off":
+                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_OFF;
+                break;
+            case "safe":
+            default:
+                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_SAFE;
+                break;
+        }
         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);
         config.mouseNavButtons = prefs.getBoolean(MOUSE_NAV_BUTTONS_STRING, DEFAULT_MOUSE_NAV_BUTTONS);

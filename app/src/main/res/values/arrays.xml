@@ -95,6 +95,21 @@
         <item>in</item>
     </string-array>
 
+    <string-array name="low_latency_fix_mode_names">
+        <item>@string/llfix_mode_safe</item>
+        <item>@string/llfix_mode_key_low_latency</item>
+        <item>@string/llfix_mode_vdec_lowlatency</item>
+        <item>@string/llfix_mode_vendor_low_latency</item>
+        <item>@string/llfix_mode_off</item>
+    </string-array>
+    <string-array name="low_latency_fix_mode_values" translatable="false">
+        <item>safe</item>
+        <item>key_low_latency</item>
+        <item>vdec_lowlatency</item>
+        <item>vendor_low_latency</item>
+        <item>off</item>
+    </string-array>
+
     <string-array name="video_format_names">
         <item>@string/videoformat_auto</item>
         <item>@string/videoformat_av1always</item>

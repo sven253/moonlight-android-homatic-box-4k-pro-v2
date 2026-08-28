@@ -269,11 +269,13 @@
             android:summary="@string/summary_checkbox_enable_perf_overlay_mini"
             android:dependency="checkbox_enable_perf_overlay"
             android:defaultValue="false"/>
-        <CheckBoxPreference
-            android:key="checkbox_enable_low_latency_fix"
-            android:title="@string/title_checkbox_enable_low_latency_fix"
-            android:summary="@string/summary_checkbox_enable_low_latency_fix"
-            android:defaultValue="true"/>
+        <ListPreference
+            android:key="list_low_latency_fix_mode"
+            android:title="@string/title_list_low_latency_fix_mode"
+            android:entries="@array/low_latency_fix_mode_names"
+            android:entryValues="@array/low_latency_fix_mode_values"
+            android:summary="@string/summary_list_low_latency_fix_mode"
+            android:defaultValue="safe"/>
         <CheckBoxPreference
             android:key="checkbox_enable_android_tv_force_gpu_composition"
             android:title="@string/title_checkbox_enable_android_tv_force_gpu_composition"
