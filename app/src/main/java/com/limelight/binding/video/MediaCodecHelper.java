@@ -58,6 +58,7 @@ public class MediaCodecHelper {
     public static final int LL_FIX_MODE_VDEC_LOWLATENCY = 2;
     public static final int LL_FIX_MODE_VENDOR_LOW_LATENCY = 3;
     public static final int LL_FIX_MODE_OFF = 4;
+    public static final int LL_FIX_MODE_COMBINED = 5;
     private static volatile int hevcLowLatencyFixMode = LL_FIX_MODE_SAFE;
     private static boolean isLowEndSnapdragon = false;
     private static boolean isAdreno620 = false;
@@ -551,6 +552,8 @@ public class MediaCodecHelper {
                 return "vdec-lowlatency only";
             case LL_FIX_MODE_VENDOR_LOW_LATENCY:
                 return "vendor.low-latency.enable only";
+            case LL_FIX_MODE_COMBINED:
+                return "vdec-lowlatency + vendor.low-latency.enable";
             case LL_FIX_MODE_OFF:
                 return "disabled (full upstream ladder)";
             case LL_FIX_MODE_SAFE:
@@ -614,6 +617,22 @@ public class MediaCodecHelper {
                     if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         LimeLog.info("LL fix bisection: trying vendor.low-latency.enable only");
                         videoFormat.setInteger("vendor.low-latency.enable", 1);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                        }
+                        return true;
+                    }
+                    return applyPriorityOnlyFallback(videoFormat, tryNumber);
+
+                case LL_FIX_MODE_COMBINED:
+                    // Both options confirmed individually working on the Homatics Box 4K Pro V2
+                    // (S905X5M-J) firmware; KEY_LOW_LATENCY is the one that breaks playback there.
+                    if (tryNumber == 0) {
+                        LimeLog.info("LL fix: using vdec-lowlatency + vendor.low-latency.enable (no KEY_LOW_LATENCY)");
+                        videoFormat.setInteger("vdec-lowlatency", 1);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            videoFormat.setInteger("vendor.low-latency.enable", 1);
+                        }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
                         }

@@ -103,7 +103,8 @@ public class PreferenceConfiguration {
     public static final int LOW_LATENCY_FIX_MODE_KEY_LOW_LATENCY = 1;   // test: official KEY_LOW_LATENCY only
     public static final int LOW_LATENCY_FIX_MODE_VDEC_LOWLATENCY = 2;   // test: vdec-lowlatency only
     public static final int LOW_LATENCY_FIX_MODE_VENDOR_LOW_LATENCY = 3;// test: vendor.low-latency.enable only
-    public static final int LOW_LATENCY_FIX_MODE_OFF = 4;              // fix off: full upstream option ladder
+    public static final int LOW_LATENCY_FIX_MODE_OFF = 4;
+    public static final int LOW_LATENCY_FIX_MODE_COMBINED = 5;         // vdec-lowlatency + vendor.low-latency.enable              // fix off: full upstream option ladder
     private static final boolean DEFAULT_BIND_ALL_USB = false;
     private static final boolean DEFAULT_MOUSE_EMULATION = true;
     private static final String DEFAULT_ANALOG_STICK_FOR_SCROLLING = "right";
@@ -623,6 +624,9 @@ public class PreferenceConfiguration {
                 break;
             case "vendor_low_latency":
                 config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_VENDOR_LOW_LATENCY;
+                break;
+            case "combined":
+                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_COMBINED;
                 break;
             case "off":
                 config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_OFF;
