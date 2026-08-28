@@ -1,0 +1,327 @@
+diff --git a/app/src/main/java/com/limelight/binding/video/MediaCodecDecoderRenderer.java b/app/src/main/java/com/limelight/binding/video/MediaCodecDecoderRenderer.java
+index 93bd189..2b523b3 100644
+--- a/app/src/main/java/com/limelight/binding/video/MediaCodecDecoderRenderer.java
++++ b/app/src/main/java/com/limelight/binding/video/MediaCodecDecoderRenderer.java
+@@ -682,22 +682,22 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
+             return -3;
+         }
+ 
+-        // Apply the user's low-latency fix preference before the decoder is configured.
++        // Apply the user's low-latency fix mode before the decoder is configured.
+         // This must happen before setDecoderLowLatencyOptions() is called below.
+-        MediaCodecHelper.setHevcLowLatencyFixEnabled(prefs == null || prefs.enableLowLatencyFix);
++        MediaCodecHelper.setHevcLowLatencyFixMode(prefs != null ? prefs.lowLatencyFixMode
++                : PreferenceConfiguration.LOW_LATENCY_FIX_MODE_SAFE);
+ 
+         // NB: The stall watchdog stays armed based on the device match alone, independent
+-        // of the fix preference. If the user disables the fix to experiment with lower
+-        // decode times, the watchdog is the safety net that recovers from the resulting
+-        // freezes / 0 FPS states without requiring an app restart.
++        // of the fix mode. In the bisection test modes and with the fix disabled, the
++        // watchdog is the safety net that recovers from freezes / 0 FPS states without
++        // requiring an app restart.
+         affectedAmlogicHevcDecoder =
+                 "video/hevc".equals(mimeType)
+                         && MediaCodecHelper.isHevcLowLatencyBrokenAmlogicDecoder(selectedDecoderInfo);
+         
+         if (affectedAmlogicHevcDecoder) {
+             LimeLog.info("Enabling Amlogic HEVC stall watchdog for " + selectedDecoderInfo.getName() +
+-                    " (low-latency fix " +
+-                    (MediaCodecHelper.isHevcLowLatencyFixEnabled() ? "enabled" : "disabled") + ")");
++                    " (low-latency fix mode: " + MediaCodecHelper.getHevcLowLatencyFixModeName() + ")");
+         }
+         
+         adaptivePlayback = MediaCodecHelper.decoderSupportsAdaptivePlayback(selectedDecoderInfo, mimeType);
+diff --git a/app/src/main/java/com/limelight/binding/video/MediaCodecHelper.java b/app/src/main/java/com/limelight/binding/video/MediaCodecHelper.java
+index dc83b22..ab1b7e8 100644
+--- a/app/src/main/java/com/limelight/binding/video/MediaCodecHelper.java
++++ b/app/src/main/java/com/limelight/binding/video/MediaCodecHelper.java
+@@ -49,11 +49,16 @@ public class MediaCodecHelper {
+             Build.HARDWARE.equals("ranchu") || Build.HARDWARE.equals("cheets") || Build.BRAND.equals("Android-x86");
+ 
+     private static boolean isAmlogicRfiSafe = false;
+-    // Controls whether low-latency decoder options are suppressed on affected
+-    // Amlogic HEVC decoders (the "low-latency fix"). Set from user preferences
+-    // before decoder configuration. Defaults to enabled to preserve the fork's
+-    // established anti-freeze behavior.
+-    private static volatile boolean hevcLowLatencyFixEnabled = true;
++    // Controls how low-latency decoder options are applied on affected Amlogic
++    // HEVC decoders (the "low-latency fix"). Set from user preferences before
++    // decoder configuration. Values mirror PreferenceConfiguration.LOW_LATENCY_FIX_MODE_*.
++    // Defaults to SAFE to preserve the fork's established anti-freeze behavior.
++    public static final int LL_FIX_MODE_SAFE = 0;
++    public static final int LL_FIX_MODE_KEY_LOW_LATENCY = 1;
++    public static final int LL_FIX_MODE_VDEC_LOWLATENCY = 2;
++    public static final int LL_FIX_MODE_VENDOR_LOW_LATENCY = 3;
++    public static final int LL_FIX_MODE_OFF = 4;
++    private static volatile int hevcLowLatencyFixMode = LL_FIX_MODE_SAFE;
+     private static boolean isLowEndSnapdragon = false;
+     private static boolean isAdreno620 = false;
+     private static boolean initialized = false;
+@@ -529,34 +534,104 @@ public class MediaCodecHelper {
+     }
+ 
+     // Called before decoder configuration to apply the user's preference.
+-    // When disabled, affected Amlogic devices go through the normal upstream
+-    // low-latency option ladder (which may reduce decode time but can cause
+-    // freezes / black screens on some firmware).
+-    public static void setHevcLowLatencyFixEnabled(boolean enabled) {
+-        hevcLowLatencyFixEnabled = enabled;
+-        LimeLog.info("Amlogic HEVC low-latency fix " + (enabled ? "enabled" : "disabled") + " by preference");
++    // SAFE suppresses all low-latency options on affected Amlogic devices.
++    // The three test modes each enable exactly one low-latency option so the
++    // toxic one can be identified by bisection. OFF restores the full upstream
++    // option ladder (which may cause freezes / black screens on some firmware).
++    public static void setHevcLowLatencyFixMode(int mode) {
++        hevcLowLatencyFixMode = mode;
++        LimeLog.info("Amlogic HEVC low-latency fix mode set to " + getHevcLowLatencyFixModeName() + " by preference");
+     }
+ 
+-    public static boolean isHevcLowLatencyFixEnabled() {
+-        return hevcLowLatencyFixEnabled;
++    public static String getHevcLowLatencyFixModeName() {
++        switch (hevcLowLatencyFixMode) {
++            case LL_FIX_MODE_KEY_LOW_LATENCY:
++                return "KEY_LOW_LATENCY only";
++            case LL_FIX_MODE_VDEC_LOWLATENCY:
++                return "vdec-lowlatency only";
++            case LL_FIX_MODE_VENDOR_LOW_LATENCY:
++                return "vendor.low-latency.enable only";
++            case LL_FIX_MODE_OFF:
++                return "disabled (full upstream ladder)";
++            case LL_FIX_MODE_SAFE:
++            default:
++                return "safe (no low-latency options)";
++        }
++    }
++
++    // Fallback for the bisection test modes: if configure() rejected the single
++    // low-latency option on try 0, retry with realtime priority only before
++    // giving up on low-latency options entirely.
++    private static boolean applyPriorityOnlyFallback(MediaFormat videoFormat, int tryNumber) {
++        if (tryNumber == 1 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
++            LimeLog.info("LL fix bisection: falling back to realtime priority only");
++            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
++            return true;
++        }
++        return false;
+     }
+ 
+     public static boolean setDecoderLowLatencyOptions(MediaFormat videoFormat, MediaCodecInfo decoderInfo, int tryNumber) {
+         boolean isAffectedHevcDecoder =
+-                hevcLowLatencyFixEnabled
+-                        && "video/hevc".equals(videoFormat.getString(MediaFormat.KEY_MIME))
++                "video/hevc".equals(videoFormat.getString(MediaFormat.KEY_MIME))
+                         && isHevcLowLatencyBrokenAmlogicDecoder(decoderInfo);
+-        
++
+         if (isAffectedHevcDecoder) {
+-            // Low-latency options break HEVC playback on affected Amlogic-based TV sticks,
+-            // but realtime codec priority may still improve decoding stability.
+-            if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+-                LimeLog.info("Using realtime HEVC priority without low-latency options on affected Devices");
+-                videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+-                return true;
+-            }
++            switch (hevcLowLatencyFixMode) {
++                case LL_FIX_MODE_OFF:
++                    // Fix disabled: fall through to the normal upstream option
++                    // ladder below, exactly as if this were an unaffected device.
++                    LimeLog.info("LL fix disabled: using full upstream low-latency ladder (try " + tryNumber + ")");
++                    break;
+ 
+-            return false;
++                case LL_FIX_MODE_KEY_LOW_LATENCY:
++                    // Bisection: only the official Android 11+ low latency option.
++                    if (tryNumber == 0) {
++                        LimeLog.info("LL fix bisection: trying KEY_LOW_LATENCY only");
++                        videoFormat.setInteger("low-latency", 1);
++                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
++                            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
++                        }
++                        return true;
++                    }
++                    return applyPriorityOnlyFallback(videoFormat, tryNumber);
++
++                case LL_FIX_MODE_VDEC_LOWLATENCY:
++                    // Bisection: only the legacy ACodec vdec-lowlatency option.
++                    if (tryNumber == 0) {
++                        LimeLog.info("LL fix bisection: trying vdec-lowlatency only");
++                        videoFormat.setInteger("vdec-lowlatency", 1);
++                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
++                            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
++                        }
++                        return true;
++                    }
++                    return applyPriorityOnlyFallback(videoFormat, tryNumber);
++
++                case LL_FIX_MODE_VENDOR_LOW_LATENCY:
++                    // Bisection: only the Amlogic vendor extension. Vendor-defined
++                    // format keys require Android 8.0+.
++                    if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                        LimeLog.info("LL fix bisection: trying vendor.low-latency.enable only");
++                        videoFormat.setInteger("vendor.low-latency.enable", 1);
++                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
++                            videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
++                        }
++                        return true;
++                    }
++                    return applyPriorityOnlyFallback(videoFormat, tryNumber);
++
++                case LL_FIX_MODE_SAFE:
++                default:
++                    // Low-latency options break HEVC playback on affected Amlogic-based TV sticks,
++                    // but realtime codec priority may still improve decoding stability.
++                    if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
++                        LimeLog.info("Using realtime HEVC priority without low-latency options on affected Devices");
++                        videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
++                        return true;
++                    }
++                    return false;
++            }
+         }
+ 
+         // Options here should be tried in the order of most to least risky. The decoder will use
+diff --git a/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java b/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
+index 60b0145..635f7af 100644
+--- a/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
++++ b/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
+@@ -51,7 +51,8 @@ public class PreferenceConfiguration {
+     private static final String ENABLE_PERF_OVERLAY_STRING = "checkbox_enable_perf_overlay";
+     private static final String ENABLE_PERF_OVERLAY_MINI_STRING = "checkbox_enable_perf_overlay_mini";
+     private static final String ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION_STRING = "checkbox_enable_android_tv_force_gpu_composition";
+-    private static final String ENABLE_LOW_LATENCY_FIX_STRING = "checkbox_enable_low_latency_fix";
++    private static final String ENABLE_LOW_LATENCY_FIX_STRING = "checkbox_enable_low_latency_fix"; // legacy key, migrated
++    private static final String LOW_LATENCY_FIX_MODE_STRING = "list_low_latency_fix_mode";
+     private static final String BIND_ALL_USB_STRING = "checkbox_usb_bind_all";
+     private static final String MOUSE_EMULATION_STRING = "checkbox_mouse_emulation";
+     private static final String ANALOG_SCROLLING_PREF_STRING = "analog_scrolling";
+@@ -94,6 +95,15 @@ public class PreferenceConfiguration {
+     private static final boolean DEFAULT_ENABLE_PERF_OVERLAY_MINI = false;
+     private static final boolean DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION = false;
+     private static final boolean DEFAULT_ENABLE_LOW_LATENCY_FIX = true;
++    private static final String DEFAULT_LOW_LATENCY_FIX_MODE = "safe";
++
++    // Low-latency fix modes for affected Amlogic HEVC decoders.
++    // Values match the entryValues of list_low_latency_fix_mode.
++    public static final int LOW_LATENCY_FIX_MODE_SAFE = 0;              // fix on: no low-latency options at all
++    public static final int LOW_LATENCY_FIX_MODE_KEY_LOW_LATENCY = 1;   // test: official KEY_LOW_LATENCY only
++    public static final int LOW_LATENCY_FIX_MODE_VDEC_LOWLATENCY = 2;   // test: vdec-lowlatency only
++    public static final int LOW_LATENCY_FIX_MODE_VENDOR_LOW_LATENCY = 3;// test: vendor.low-latency.enable only
++    public static final int LOW_LATENCY_FIX_MODE_OFF = 4;              // fix off: full upstream option ladder
+     private static final boolean DEFAULT_BIND_ALL_USB = false;
+     private static final boolean DEFAULT_MOUSE_EMULATION = true;
+     private static final String DEFAULT_ANALOG_STICK_FOR_SCROLLING = "right";
+@@ -144,7 +154,7 @@ public class PreferenceConfiguration {
+     public boolean enablePerfOverlay;
+     public boolean enablePerfOverlayMini;
+     public boolean enableAndroidTvForceGpuComposition;
+-    public boolean enableLowLatencyFix;
++    public int lowLatencyFixMode;
+     public boolean enableLatencyToast;
+     public boolean bindAllUsb;
+     public boolean mouseEmulation;
+@@ -597,9 +607,31 @@ public class PreferenceConfiguration {
+         config.enableAndroidTvForceGpuComposition = prefs.getBoolean(
+                 ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION_STRING,
+                 DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION);
+-        config.enableLowLatencyFix = prefs.getBoolean(
+-                ENABLE_LOW_LATENCY_FIX_STRING,
+-                DEFAULT_ENABLE_LOW_LATENCY_FIX);
++        // Migration: honor the legacy on/off checkbox if the user never touched the new list.
++        String llFixDefault = DEFAULT_LOW_LATENCY_FIX_MODE;
++        if (!prefs.contains(LOW_LATENCY_FIX_MODE_STRING) && prefs.contains(ENABLE_LOW_LATENCY_FIX_STRING)) {
++            llFixDefault = prefs.getBoolean(ENABLE_LOW_LATENCY_FIX_STRING, DEFAULT_ENABLE_LOW_LATENCY_FIX)
++                    ? "safe" : "off";
++        }
++        String llFixModeValue = prefs.getString(LOW_LATENCY_FIX_MODE_STRING, llFixDefault);
++        switch (llFixModeValue) {
++            case "key_low_latency":
++                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_KEY_LOW_LATENCY;
++                break;
++            case "vdec_lowlatency":
++                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_VDEC_LOWLATENCY;
++                break;
++            case "vendor_low_latency":
++                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_VENDOR_LOW_LATENCY;
++                break;
++            case "off":
++                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_OFF;
++                break;
++            case "safe":
++            default:
++                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_SAFE;
++                break;
++        }
+         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
+         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);
+         config.mouseNavButtons = prefs.getBoolean(MOUSE_NAV_BUTTONS_STRING, DEFAULT_MOUSE_NAV_BUTTONS);
+diff --git a/app/src/main/res/values/arrays.xml b/app/src/main/res/values/arrays.xml
+index 9bdeb03..e0a7dc7 100644
+--- a/app/src/main/res/values/arrays.xml
++++ b/app/src/main/res/values/arrays.xml
+@@ -95,6 +95,21 @@
+         <item>in</item>
+     </string-array>
+ 
++    <string-array name="low_latency_fix_mode_names">
++        <item>@string/llfix_mode_safe</item>
++        <item>@string/llfix_mode_key_low_latency</item>
++        <item>@string/llfix_mode_vdec_lowlatency</item>
++        <item>@string/llfix_mode_vendor_low_latency</item>
++        <item>@string/llfix_mode_off</item>
++    </string-array>
++    <string-array name="low_latency_fix_mode_values" translatable="false">
++        <item>safe</item>
++        <item>key_low_latency</item>
++        <item>vdec_lowlatency</item>
++        <item>vendor_low_latency</item>
++        <item>off</item>
++    </string-array>
++
+     <string-array name="video_format_names">
+         <item>@string/videoformat_auto</item>
+         <item>@string/videoformat_av1always</item>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 66c2c97..e383a38 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -256,8 +256,13 @@
+     <string name="summary_checkbox_enable_perf_overlay_mini">Display compact performance information</string>
+     <string name="title_checkbox_enable_android_tv_force_gpu_composition">Force GPU composition (Android TV)</string>
+     <string name="summary_checkbox_enable_android_tv_force_gpu_composition">Fixes frame sync issues on some Android TV devices by forcing GPU composition updates.</string>
+-    <string name="title_checkbox_enable_low_latency_fix">Amlogic HEVC freeze fix</string>
+-    <string name="summary_checkbox_enable_low_latency_fix">Disables decoder low-latency options on affected Amlogic devices (Homatics Box 4K Pro V2, Mi TV Stick/Box) to prevent freezes and black screens during HEVC streaming. Turning this off enables low-latency mode for reduced decoding time, but may cause the stream to freeze or show 0 FPS. Takes effect on the next stream.</string>
++    <string name="title_list_low_latency_fix_mode">Amlogic HEVC freeze fix</string>
++    <string name="summary_list_low_latency_fix_mode">Controls decoder low-latency options on affected Amlogic devices (Homatics Box 4K Pro V2, Mi TV Stick/Box). "Fix enabled" prevents freezes and black screens but adds decoding latency. The test modes enable one specific low-latency option each, to find one that works on your firmware. If the stream freezes or shows 0 FPS in a test mode, the built-in watchdog restarts the decoder after a few seconds. Takes effect on the next stream.</string>
++    <string name="llfix_mode_safe">Fix enabled – no low-latency options (safe)</string>
++    <string name="llfix_mode_key_low_latency">Test: KEY_LOW_LATENCY only</string>
++    <string name="llfix_mode_vdec_lowlatency">Test: vdec-lowlatency only</string>
++    <string name="llfix_mode_vendor_low_latency">Test: vendor.low-latency.enable only</string>
++    <string name="llfix_mode_off">Fix disabled – all low-latency options (may freeze)</string>
+     <string name="title_enable_post_stream_toast">Show latency message after streaming</string>
+     <string name="summary_enable_post_stream_toast">Display a latency information message after the stream ends</string>
+ 
+diff --git a/app/src/main/res/xml/preferences.xml b/app/src/main/res/xml/preferences.xml
+index c3aead1..a978b07 100644
+--- a/app/src/main/res/xml/preferences.xml
++++ b/app/src/main/res/xml/preferences.xml
+@@ -269,11 +269,13 @@
+             android:summary="@string/summary_checkbox_enable_perf_overlay_mini"
+             android:dependency="checkbox_enable_perf_overlay"
+             android:defaultValue="false"/>
+-        <CheckBoxPreference
+-            android:key="checkbox_enable_low_latency_fix"
+-            android:title="@string/title_checkbox_enable_low_latency_fix"
+-            android:summary="@string/summary_checkbox_enable_low_latency_fix"
+-            android:defaultValue="true"/>
++        <ListPreference
++            android:key="list_low_latency_fix_mode"
++            android:title="@string/title_list_low_latency_fix_mode"
++            android:entries="@array/low_latency_fix_mode_names"
++            android:entryValues="@array/low_latency_fix_mode_values"
++            android:summary="@string/summary_list_low_latency_fix_mode"
++            android:defaultValue="safe"/>
+         <CheckBoxPreference
+             android:key="checkbox_enable_android_tv_force_gpu_composition"
+             android:title="@string/title_checkbox_enable_android_tv_force_gpu_composition"
