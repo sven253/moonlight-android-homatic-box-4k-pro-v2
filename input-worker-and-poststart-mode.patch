@@ -1,0 +1,500 @@
+diff --git a/app/src/main/java/com/limelight/binding/input/ControllerHandler.java b/app/src/main/java/com/limelight/binding/input/ControllerHandler.java
+index f7c8c0d1..d7d70ee9 100644
+--- a/app/src/main/java/com/limelight/binding/input/ControllerHandler.java
++++ b/app/src/main/java/com/limelight/binding/input/ControllerHandler.java
+@@ -126,6 +126,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+     private boolean stopped = false;
+ 
+     private final PreferenceConfiguration prefConfig;
++    private final InputSender inputSender;
+     private short currentControllers, initialControllers;
+ 
+     public ControllerHandler(Activity activityContext, NvConnection conn, GameGestures gestures, PreferenceConfiguration prefConfig) {
+@@ -133,6 +134,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+         this.conn = conn;
+         this.gestures = gestures;
+         this.prefConfig = prefConfig;
++        this.inputSender = new InputSender(prefConfig != null && prefConfig.enableInputWorker);
+         this.deviceVibrator = (Vibrator) activityContext.getSystemService(Context.VIBRATOR_SERVICE);
+         this.deviceSensorManager = (SensorManager) activityContext.getSystemService(Context.SENSOR_SERVICE);
+         this.inputManager = (InputManager) activityContext.getSystemService(Context.INPUT_SERVICE);
+@@ -295,6 +297,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+ 
+         sceManager.stop();
+         backgroundHandlerThread.quit();
++        inputSender.shutdown();
+     }
+ 
+     public void disableSensors() {
+@@ -415,11 +418,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+         // We must do this after clearing the currentControllers entry so this
+         // causes the device to be removed on the server PC.
+         if (context.assignedControllerNumber) {
+-            conn.sendControllerInput(context.controllerNumber, getActiveControllerMask(),
++            final short removedControllerNumber = context.controllerNumber;
++            final short activeMaskAfterRemoval = getActiveControllerMask();
++            inputSender.submit(() -> conn.sendControllerInput(removedControllerNumber, activeMaskAfterRemoval,
+                     (short) 0,
+                     (byte) 0, (byte) 0,
+                     (short) 0, (short) 0,
+-                    (short) 0, (short) 0);
++                    (short) 0, (short) 0));
+         }
+     }
+ 
+@@ -1186,7 +1191,10 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+                 percentage = (byte)(currentBatteryCapacity * 100);
+             }
+ 
+-            conn.sendControllerBatteryEvent((byte)context.controllerNumber, state, percentage);
++            final byte batteryControllerNumber = (byte)context.controllerNumber;
++            final byte fState = state;
++            final byte fPercentage = percentage;
++            inputSender.submit(() -> conn.sendControllerBatteryEvent(batteryControllerNumber, fState, fPercentage));
+ 
+             context.lastReportedBatteryStatus = currentBatteryStatus;
+             context.lastReportedBatteryCapacity = currentBatteryCapacity;
+@@ -1257,50 +1265,61 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+ 
+             if ((changedMask & ControllerPacket.A_FLAG) != 0) {
+                 if (aDown) {
+-                    conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT);
++                    inputSender.submit(() -> conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT));
+                 }
+                 else {
+-                    conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT);
++                    inputSender.submit(() -> conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT));
+                 }
+             }
+             if ((changedMask & ControllerPacket.B_FLAG) != 0) {
+                 if (bDown) {
+-                    conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_RIGHT);
++                    inputSender.submit(() -> conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_RIGHT));
+                 }
+                 else {
+-                    conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT);
++                    inputSender.submit(() -> conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT));
+                 }
+             }
+             if ((changedMask & ControllerPacket.UP_FLAG) != 0) {
+                 if ((inputMap & ControllerPacket.UP_FLAG) != 0) {
+-                    conn.sendMouseScroll((byte) 1);
++                    inputSender.submit(() -> conn.sendMouseScroll((byte) 1));
+                 }
+             }
+             if ((changedMask & ControllerPacket.DOWN_FLAG) != 0) {
+                 if ((inputMap & ControllerPacket.DOWN_FLAG) != 0) {
+-                    conn.sendMouseScroll((byte) -1);
++                    inputSender.submit(() -> conn.sendMouseScroll((byte) -1));
+                 }
+             }
+             if ((changedMask & ControllerPacket.RIGHT_FLAG) != 0) {
+                 if ((inputMap & ControllerPacket.RIGHT_FLAG) != 0) {
+-                    conn.sendMouseHScroll((byte) 1);
++                    inputSender.submit(() -> conn.sendMouseHScroll((byte) 1));
+                 }
+             }
+             if ((changedMask & ControllerPacket.LEFT_FLAG) != 0) {
+                 if ((inputMap & ControllerPacket.LEFT_FLAG) != 0) {
+-                    conn.sendMouseHScroll((byte) -1);
++                    inputSender.submit(() -> conn.sendMouseHScroll((byte) -1));
+                 }
+             }
+ 
+-            conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
+-                    (short)0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
++            final short fControllerNumber = controllerNumber;
++            final short fActiveMask = getActiveControllerMask();
++            inputSender.submit(() -> conn.sendControllerInput(fControllerNumber, fActiveMask,
++                    (short)0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0));
+         }
+         else {
+-            conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
+-                    inputMap,
+-                    leftTrigger, rightTrigger,
+-                    leftStickX, leftStickY,
+-                    rightStickX, rightStickY);
++            final short fControllerNumber = controllerNumber;
++            final short fActiveMask = getActiveControllerMask();
++            final int fInputMap = inputMap;
++            final byte fLeftTrigger = leftTrigger;
++            final byte fRightTrigger = rightTrigger;
++            final short fLeftStickX = leftStickX;
++            final short fLeftStickY = leftStickY;
++            final short fRightStickX = rightStickX;
++            final short fRightStickY = rightStickY;
++            inputSender.submit(() -> conn.sendControllerInput(fControllerNumber, fActiveMask,
++                    fInputMap,
++                    fLeftTrigger, fRightTrigger,
++                    fLeftStickX, fLeftStickY,
++                    fRightStickX, fRightStickY));
+         }
+     }
+ 
+@@ -1849,15 +1868,21 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+     private void sendEmulatedMouseMove(short x, short y) {
+         Vector2d vector = convertRawStickAxisToPixelMovement(x, y);
+         if (vector.getMagnitude() >= 1) {
+-            conn.sendMouseMove((short)vector.getX(), (short)-vector.getY());
++            final short mouseDx = (short)vector.getX();
++            final short mouseDy = (short)-vector.getY();
++            inputSender.submit(() -> conn.sendMouseMove(mouseDx, mouseDy));
+         }
+     }
+ 
+     private void sendEmulatedMouseScroll(short x, short y) {
+         Vector2d vector = convertRawStickAxisToPixelMovement(x, y);
+         if (vector.getMagnitude() >= 1) {
+-            conn.sendMouseHighResScroll((short)vector.getY());
+-            conn.sendMouseHighResHScroll((short)vector.getX());
++            final short scrollY = (short)vector.getY();
++            final short scrollX = (short)vector.getX();
++            inputSender.submit(() -> {
++                conn.sendMouseHighResScroll(scrollY);
++                conn.sendMouseHighResHScroll(scrollX);
++            });
+         }
+     }
+ 
+@@ -2201,21 +2226,25 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+                     }
+                 }
+ 
++                // Compute values eagerly: Android recycles SensorEvent objects,
++                // so they must not be read later on the input worker thread.
++                final byte motionControllerNumber = (byte) controllerNumber;
++                final byte fMotionType = motionType;
+                 if (motionType == MoonBridge.LI_MOTION_TYPE_GYRO) {
+                     // Convert from rad/s to deg/s
+-                    conn.sendControllerMotionEvent((byte) controllerNumber,
+-                            motionType,
+-                            sensorEvent.values[x] * xFactor * 57.2957795f,
+-                            sensorEvent.values[y] * yFactor * 57.2957795f,
+-                            sensorEvent.values[z] * zFactor * 57.2957795f);
++                    final float gx = sensorEvent.values[x] * xFactor * 57.2957795f;
++                    final float gy = sensorEvent.values[y] * yFactor * 57.2957795f;
++                    final float gz = sensorEvent.values[z] * zFactor * 57.2957795f;
++                    inputSender.submit(() -> conn.sendControllerMotionEvent(motionControllerNumber,
++                            fMotionType, gx, gy, gz));
+                 }
+                 else {
+                     // Pass m/s^2 directly without conversion
+-                    conn.sendControllerMotionEvent((byte) controllerNumber,
+-                            motionType,
+-                            sensorEvent.values[x] * xFactor,
+-                            sensorEvent.values[y] * yFactor,
+-                            sensorEvent.values[z] * zFactor);
++                    final float ax = sensorEvent.values[x] * xFactor;
++                    final float ay = sensorEvent.values[y] * yFactor;
++                    final float az = sensorEvent.values[z] * zFactor;
++                    inputSender.submit(() -> conn.sendControllerMotionEvent(motionControllerNumber,
++                            fMotionType, ax, ay, az));
+                 }
+             }
+ 
+@@ -3177,8 +3206,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+                 }
+             }
+ 
+-            conn.sendControllerArrivalEvent((byte)controllerNumber, getActiveControllerMask(),
+-                    reportedType, supportedButtonFlags, capabilities);
++            final byte arrivalControllerNumber = (byte)controllerNumber;
++            final short arrivalActiveMask = getActiveControllerMask();
++            final byte fReportedType = reportedType;
++            final int fSupportedButtonFlags = supportedButtonFlags;
++            final short fCapabilities = capabilities;
++            inputSender.submit(() -> conn.sendControllerArrivalEvent(arrivalControllerNumber, arrivalActiveMask,
++                    fReportedType, fSupportedButtonFlags, fCapabilities));
+ 
+             // After reporting arrival to the host, send initial battery state and begin monitoring
+             backgroundThreadHandler.post(batteryStateUpdateRunnable);
+@@ -3228,7 +3262,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+                 gyroListener = null;
+ 
+                 // Send a gyro event to ensure the virtual controller is stationary
+-                conn.sendControllerMotionEvent((byte) controllerNumber, MoonBridge.LI_MOTION_TYPE_GYRO, 0.f, 0.f, 0.f);
++                inputSender.submit(() -> conn.sendControllerMotionEvent((byte) controllerNumber, MoonBridge.LI_MOTION_TYPE_GYRO, 0.f, 0.f, 0.f));
+             }
+             if (accelListener != null) {
+                 sensorManager.unregisterListener(accelListener);
+@@ -3258,8 +3292,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
+ 
+         @Override
+         public void sendControllerArrival() {
+-            conn.sendControllerArrivalEvent((byte)controllerNumber, getActiveControllerMask(),
+-                    device.getType(), device.getSupportedButtonFlags(), device.getCapabilities());
++            final byte arrivalControllerNumber = (byte)controllerNumber;
++            final short arrivalActiveMask = getActiveControllerMask();
++            final byte arrivalType = device.getType();
++            final int arrivalButtonFlags = device.getSupportedButtonFlags();
++            final short arrivalCapabilities = device.getCapabilities();
++            inputSender.submit(() -> conn.sendControllerArrivalEvent(arrivalControllerNumber, arrivalActiveMask,
++                    arrivalType, arrivalButtonFlags, arrivalCapabilities));
+         }
+     }
+ }
+diff --git a/app/src/main/java/com/limelight/binding/input/InputSender.java b/app/src/main/java/com/limelight/binding/input/InputSender.java
+new file mode 100644
+index 00000000..9a05f755
+--- /dev/null
++++ b/app/src/main/java/com/limelight/binding/input/InputSender.java
+@@ -0,0 +1,60 @@
++package com.limelight.binding.input;
++
++import android.os.Handler;
++import android.os.HandlerThread;
++
++/**
++ * Optional worker thread for outgoing input packets (concept borrowed from the
++ * derflacco/Artemis "Snappy Input" work, reimplemented for this fork).
++ *
++ * When enabled, controller input sends are posted to a dedicated HandlerThread
++ * instead of being executed on the calling (usually UI) thread. This keeps the
++ * UI thread responsive even if the native send path ever blocks, so the user
++ * can still quit the stream. A single HandlerThread preserves the exact send
++ * ordering of the synchronous path.
++ *
++ * When disabled, submit() runs the task inline, which is byte-for-byte the
++ * previous behavior.
++ */
++public final class InputSender {
++    private final boolean async;
++    private final HandlerThread thread;
++    private final Handler handler;
++    private volatile boolean stopped = false;
++
++    public InputSender(boolean async) {
++        this.async = async;
++        if (async) {
++            thread = new HandlerThread("InputSender");
++            thread.start();
++            handler = new Handler(thread.getLooper());
++        }
++        else {
++            thread = null;
++            handler = null;
++        }
++    }
++
++    public void submit(Runnable r) {
++        if (r == null) {
++            return;
++        }
++        if (!async || stopped) {
++            r.run();
++            return;
++        }
++        // If the looper is already quitting, fall back to inline execution
++        // so teardown packets (like controller zeroing) are never lost.
++        if (!handler.post(r)) {
++            r.run();
++        }
++    }
++
++    public void shutdown() {
++        stopped = true;
++        if (thread != null) {
++            // quitSafely() still processes already-queued sends before exiting.
++            thread.quitSafely();
++        }
++    }
++}
+diff --git a/app/src/main/java/com/limelight/binding/video/MediaCodecDecoderRenderer.java b/app/src/main/java/com/limelight/binding/video/MediaCodecDecoderRenderer.java
+index 2b523b31..aba8c80a 100644
+--- a/app/src/main/java/com/limelight/binding/video/MediaCodecDecoderRenderer.java
++++ b/app/src/main/java/com/limelight/binding/video/MediaCodecDecoderRenderer.java
+@@ -573,6 +573,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
+         // Start the decoder
+         videoDecoder.start();
+ 
++        // Post-start low-latency test mode: some decoder stacks only latch the
++        // low-latency option at runtime rather than at configure() time.
++        MediaCodecHelper.applyPostStartLowLatencyIfRequested(videoDecoder, affectedAmlogicHevcDecoder);
++
+         // A decoder start/restart creates a new decode timeline.
+         // The output-stall watchdog is armed when real video input begins.
+         lastVideoInputQueuedMs = 0;
+diff --git a/app/src/main/java/com/limelight/binding/video/MediaCodecHelper.java b/app/src/main/java/com/limelight/binding/video/MediaCodecHelper.java
+index e38de18c..fc2ae5d6 100644
+--- a/app/src/main/java/com/limelight/binding/video/MediaCodecHelper.java
++++ b/app/src/main/java/com/limelight/binding/video/MediaCodecHelper.java
+@@ -15,6 +15,7 @@ import android.app.ActivityManager;
+ import android.content.Context;
+ import android.content.pm.ConfigurationInfo;
+ import android.media.MediaCodec;
++import android.os.Bundle;
+ import android.media.MediaCodecInfo;
+ import android.media.MediaCodecList;
+ import android.media.MediaCodecInfo.CodecCapabilities;
+@@ -59,6 +60,7 @@ public class MediaCodecHelper {
+     public static final int LL_FIX_MODE_VENDOR_LOW_LATENCY = 3;
+     public static final int LL_FIX_MODE_OFF = 4;
+     public static final int LL_FIX_MODE_COMBINED = 5;
++    public static final int LL_FIX_MODE_POST_START = 6;
+     private static volatile int hevcLowLatencyFixMode = LL_FIX_MODE_SAFE;
+     private static boolean isLowEndSnapdragon = false;
+     private static boolean isAdreno620 = false;
+@@ -554,6 +556,8 @@ public class MediaCodecHelper {
+                 return "vendor.low-latency.enable only";
+             case LL_FIX_MODE_COMBINED:
+                 return "vdec-lowlatency + vendor.low-latency.enable";
++            case LL_FIX_MODE_POST_START:
++                return "post-start low-latency (setParameters)";
+             case LL_FIX_MODE_OFF:
+                 return "disabled (full upstream ladder)";
+             case LL_FIX_MODE_SAFE:
+@@ -573,6 +577,28 @@ public class MediaCodecHelper {
+         }
+     }
+ 
++    // Applies "low-latency" via setParameters() after the codec was started, if the
++    // post-start test mode is selected (technique observed in the derflacco fork:
++    // some decoder stacks only latch the option at runtime). Called from the
++    // renderer after every videoDecoder.start(), including watchdog restarts.
++    public static void applyPostStartLowLatencyIfRequested(MediaCodec videoDecoder, boolean affectedAmlogicHevcDecoder) {
++        if (!affectedAmlogicHevcDecoder || hevcLowLatencyFixMode != LL_FIX_MODE_POST_START) {
++            return;
++        }
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
++            // MediaCodec.setParameters() requires API 19
++            return;
++        }
++        try {
++            Bundle params = new Bundle();
++            params.putInt("low-latency", 1);
++            videoDecoder.setParameters(params);
++            LimeLog.info("LL fix post-start: applied low-latency=1 via setParameters()");
++        } catch (Exception e) {
++            LimeLog.warning("LL fix post-start: setParameters failed: " + e);
++        }
++    }
++
+     // Fallback for the bisection test modes: if configure() rejected the single
+     // low-latency option on try 0, retry with realtime priority only before
+     // giving up on low-latency options entirely.
+@@ -651,6 +677,10 @@ public class MediaCodecHelper {
+                     }
+                     return applyPriorityOnlyFallback(videoFormat, tryNumber);
+ 
++                case LL_FIX_MODE_POST_START:
++                    // No low-latency options at configure() time. The low-latency
++                    // parameter is applied after start() via setParameters(); see
++                    // applyPostStartLowLatencyIfRequested().
+                 case LL_FIX_MODE_SAFE:
+                 default:
+                     // Low-latency options break HEVC playback on affected Amlogic-based TV sticks,
+diff --git a/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java b/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
+index 4e2d50e2..d901805f 100644
+--- a/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
++++ b/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
+@@ -53,6 +53,7 @@ public class PreferenceConfiguration {
+     private static final String ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION_STRING = "checkbox_enable_android_tv_force_gpu_composition";
+     private static final String ENABLE_LOW_LATENCY_FIX_STRING = "checkbox_enable_low_latency_fix"; // legacy key, migrated
+     private static final String LOW_LATENCY_FIX_MODE_STRING = "list_low_latency_fix_mode";
++    private static final String ENABLE_INPUT_WORKER_STRING = "checkbox_enable_input_worker";
+     private static final String BIND_ALL_USB_STRING = "checkbox_usb_bind_all";
+     private static final String MOUSE_EMULATION_STRING = "checkbox_mouse_emulation";
+     private static final String ANALOG_SCROLLING_PREF_STRING = "analog_scrolling";
+@@ -96,6 +97,7 @@ public class PreferenceConfiguration {
+     private static final boolean DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION = false;
+     private static final boolean DEFAULT_ENABLE_LOW_LATENCY_FIX = true;
+     private static final String DEFAULT_LOW_LATENCY_FIX_MODE = "safe";
++    private static final boolean DEFAULT_ENABLE_INPUT_WORKER = false;
+ 
+     // Low-latency fix modes for affected Amlogic HEVC decoders.
+     // Values match the entryValues of list_low_latency_fix_mode.
+@@ -104,7 +106,8 @@ public class PreferenceConfiguration {
+     public static final int LOW_LATENCY_FIX_MODE_VDEC_LOWLATENCY = 2;   // test: vdec-lowlatency only
+     public static final int LOW_LATENCY_FIX_MODE_VENDOR_LOW_LATENCY = 3;// test: vendor.low-latency.enable only
+     public static final int LOW_LATENCY_FIX_MODE_OFF = 4;
+-    public static final int LOW_LATENCY_FIX_MODE_COMBINED = 5;         // vdec-lowlatency + vendor.low-latency.enable              // fix off: full upstream option ladder
++    public static final int LOW_LATENCY_FIX_MODE_COMBINED = 5;         // vdec-lowlatency + vendor.low-latency.enable
++    public static final int LOW_LATENCY_FIX_MODE_POST_START = 6;       // no options at configure; low-latency via setParameters() after start              // fix off: full upstream option ladder
+     private static final boolean DEFAULT_BIND_ALL_USB = false;
+     private static final boolean DEFAULT_MOUSE_EMULATION = true;
+     private static final String DEFAULT_ANALOG_STICK_FOR_SCROLLING = "right";
+@@ -156,6 +159,7 @@ public class PreferenceConfiguration {
+     public boolean enablePerfOverlayMini;
+     public boolean enableAndroidTvForceGpuComposition;
+     public int lowLatencyFixMode;
++    public boolean enableInputWorker;
+     public boolean enableLatencyToast;
+     public boolean bindAllUsb;
+     public boolean mouseEmulation;
+@@ -615,6 +619,9 @@ public class PreferenceConfiguration {
+                     ? "safe" : "off";
+         }
+         String llFixModeValue = prefs.getString(LOW_LATENCY_FIX_MODE_STRING, llFixDefault);
++        config.enableInputWorker = prefs.getBoolean(
++                ENABLE_INPUT_WORKER_STRING,
++                DEFAULT_ENABLE_INPUT_WORKER);
+         switch (llFixModeValue) {
+             case "key_low_latency":
+                 config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_KEY_LOW_LATENCY;
+@@ -628,6 +635,9 @@ public class PreferenceConfiguration {
+             case "combined":
+                 config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_COMBINED;
+                 break;
++            case "post_start":
++                config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_POST_START;
++                break;
+             case "off":
+                 config.lowLatencyFixMode = LOW_LATENCY_FIX_MODE_OFF;
+                 break;
+diff --git a/app/src/main/res/values/arrays.xml b/app/src/main/res/values/arrays.xml
+index 1be98ffc..e1cd2c95 100644
+--- a/app/src/main/res/values/arrays.xml
++++ b/app/src/main/res/values/arrays.xml
+@@ -101,6 +101,7 @@
+         <item>@string/llfix_mode_vdec_lowlatency</item>
+         <item>@string/llfix_mode_vendor_low_latency</item>
+         <item>@string/llfix_mode_combined</item>
++        <item>@string/llfix_mode_post_start</item>
+         <item>@string/llfix_mode_off</item>
+     </string-array>
+     <string-array name="low_latency_fix_mode_values" translatable="false">
+@@ -109,6 +110,7 @@
+         <item>vdec_lowlatency</item>
+         <item>vendor_low_latency</item>
+         <item>combined</item>
++        <item>post_start</item>
+         <item>off</item>
+     </string-array>
+ 
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 45cf3151..9bb98663 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -256,6 +256,8 @@
+     <string name="summary_checkbox_enable_perf_overlay_mini">Display compact performance information</string>
+     <string name="title_checkbox_enable_android_tv_force_gpu_composition">Force GPU composition (Android TV)</string>
+     <string name="summary_checkbox_enable_android_tv_force_gpu_composition">Fixes frame sync issues on some Android TV devices by forcing GPU composition updates.</string>
++    <string name="title_checkbox_enable_input_worker">Input worker thread</string>
++    <string name="summary_checkbox_enable_input_worker">Sends controller input from a dedicated background thread instead of the UI thread. Keeps the app responsive if the input send path ever stalls, so the stream can still be quit. Takes effect on the next stream.</string>
+     <string name="title_list_low_latency_fix_mode">Amlogic HEVC freeze fix</string>
+     <string name="summary_list_low_latency_fix_mode">Controls decoder low-latency options on affected Amlogic devices (Homatics Box 4K Pro V2, Mi TV Stick/Box). "Fix enabled" prevents freezes and black screens but adds decoding latency. The test modes enable one specific low-latency option each, to find one that works on your firmware. If the stream freezes or shows 0 FPS in a test mode, the built-in watchdog restarts the decoder after a few seconds. Takes effect on the next stream.</string>
+     <string name="llfix_mode_safe">Fix enabled – no low-latency options (safe)</string>
+@@ -263,6 +265,7 @@
+     <string name="llfix_mode_vdec_lowlatency">Test: vdec-lowlatency only</string>
+     <string name="llfix_mode_vendor_low_latency">Test: vendor.low-latency.enable only</string>
+     <string name="llfix_mode_combined">Recommended: vdec-lowlatency + vendor.low-latency.enable</string>
++    <string name="llfix_mode_post_start">Test: KEY_LOW_LATENCY post-start (setParameters)</string>
+     <string name="llfix_mode_off">Fix disabled – all low-latency options (may freeze)</string>
+     <string name="title_enable_post_stream_toast">Show latency message after streaming</string>
+     <string name="summary_enable_post_stream_toast">Display a latency information message after the stream ends</string>
+diff --git a/app/src/main/res/xml/preferences.xml b/app/src/main/res/xml/preferences.xml
+index a978b078..4f3f76de 100644
+--- a/app/src/main/res/xml/preferences.xml
++++ b/app/src/main/res/xml/preferences.xml
+@@ -126,6 +126,11 @@
+             android:title="@string/title_checkbox_gamepad_motion_fallback"
+             android:summary="@string/summary_checkbox_gamepad_motion_fallback"
+             android:defaultValue="false" />
++        <CheckBoxPreference
++            android:key="checkbox_enable_input_worker"
++            android:title="@string/title_checkbox_enable_input_worker"
++            android:summary="@string/summary_checkbox_enable_input_worker"
++            android:defaultValue="false" />
+     </PreferenceCategory>
+     <PreferenceCategory android:title="@string/category_input_settings"
+         android:key="category_input_settings">
