@@ -57,7 +57,7 @@ so each one can be tested individually. Measurements below are from a Homatics B
 | --- | --- |
 | No low-latency options (default) | ~10 ms decode time, stable |
 | `KEY_LOW_LATENCY` at `configure()` | No video output at all (black screen / 0 FPS) |
-| `KEY_LOW_LATENCY` via `setParameters()` after `start()` | Video works, but freezes intermittently |
+| `KEY_LOW_LATENCY` via `setParameters()` after `start()` | Video works, but stuttering (1 FPS) shortly after start |
 | `vdec-lowlatency` | No measurable latency gain, freezes intermittently |
 | `vendor.low-latency.enable` | No measurable latency gain, freezes intermittently |
 | Both vendor options combined | No measurable latency gain, freezes intermittently |
