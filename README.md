@@ -30,7 +30,7 @@ Current defaults are tuned for the target device profile:
 - Frame pacing: **Balanced**
 - Android TV force GPU composition: **Disabled**
 - Amlogic HEVC low-latency options: **No low-latency options (stable)**
-- Input worker thread: **Enabled**
+- Input worker thread: **Disabled**
 
 ## Tested configuration
 
