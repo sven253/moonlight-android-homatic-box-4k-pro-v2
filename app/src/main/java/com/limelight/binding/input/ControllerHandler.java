@@ -126,6 +126,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private boolean stopped = false;
 
     private final PreferenceConfiguration prefConfig;
+    private final InputSender inputSender;
     private short currentControllers, initialControllers;
 
     public ControllerHandler(Activity activityContext, NvConnection conn, GameGestures gestures, PreferenceConfiguration prefConfig) {
@@ -133,6 +134,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         this.conn = conn;
         this.gestures = gestures;
         this.prefConfig = prefConfig;
+        this.inputSender = new InputSender(prefConfig != null && prefConfig.enableInputWorker);
         this.deviceVibrator = (Vibrator) activityContext.getSystemService(Context.VIBRATOR_SERVICE);
         this.deviceSensorManager = (SensorManager) activityContext.getSystemService(Context.SENSOR_SERVICE);
         this.inputManager = (InputManager) activityContext.getSystemService(Context.INPUT_SERVICE);
@@ -295,6 +297,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
         sceManager.stop();
         backgroundHandlerThread.quit();
+        inputSender.shutdown();
     }
 
     public void disableSensors() {
@@ -415,11 +418,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         // We must do this after clearing the currentControllers entry so this
         // causes the device to be removed on the server PC.
         if (context.assignedControllerNumber) {
-            conn.sendControllerInput(context.controllerNumber, getActiveControllerMask(),
+            final short removedControllerNumber = context.controllerNumber;
+            final short activeMaskAfterRemoval = getActiveControllerMask();
+            inputSender.submit(() -> conn.sendControllerInput(removedControllerNumber, activeMaskAfterRemoval,
                     (short) 0,
                     (byte) 0, (byte) 0,
                     (short) 0, (short) 0,
-                    (short) 0, (short) 0);
+                    (short) 0, (short) 0));
         }
     }
 
@@ -1186,7 +1191,10 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                 percentage = (byte)(currentBatteryCapacity * 100);
             }
 
-            conn.sendControllerBatteryEvent((byte)context.controllerNumber, state, percentage);
+            final byte batteryControllerNumber = (byte)context.controllerNumber;
+            final byte fState = state;
+            final byte fPercentage = percentage;
+            inputSender.submit(() -> conn.sendControllerBatteryEvent(batteryControllerNumber, fState, fPercentage));
 
             context.lastReportedBatteryStatus = currentBatteryStatus;
             context.lastReportedBatteryCapacity = currentBatteryCapacity;
@@ -1257,50 +1265,61 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
             if ((changedMask & ControllerPacket.A_FLAG) != 0) {
                 if (aDown) {
-                    conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT);
+                    inputSender.submit(() -> conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT));
                 }
                 else {
-                    conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT);
+                    inputSender.submit(() -> conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT));
                 }
             }
             if ((changedMask & ControllerPacket.B_FLAG) != 0) {
                 if (bDown) {
-                    conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_RIGHT);
+                    inputSender.submit(() -> conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_RIGHT));
                 }
                 else {
-                    conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT);
+                    inputSender.submit(() -> conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT));
                 }
             }
             if ((changedMask & ControllerPacket.UP_FLAG) != 0) {
                 if ((inputMap & ControllerPacket.UP_FLAG) != 0) {
-                    conn.sendMouseScroll((byte) 1);
+                    inputSender.submit(() -> conn.sendMouseScroll((byte) 1));
                 }
             }
             if ((changedMask & ControllerPacket.DOWN_FLAG) != 0) {
                 if ((inputMap & ControllerPacket.DOWN_FLAG) != 0) {
-                    conn.sendMouseScroll((byte) -1);
+                    inputSender.submit(() -> conn.sendMouseScroll((byte) -1));
                 }
             }
             if ((changedMask & ControllerPacket.RIGHT_FLAG) != 0) {
                 if ((inputMap & ControllerPacket.RIGHT_FLAG) != 0) {
-                    conn.sendMouseHScroll((byte) 1);
+                    inputSender.submit(() -> conn.sendMouseHScroll((byte) 1));
                 }
             }
             if ((changedMask & ControllerPacket.LEFT_FLAG) != 0) {
                 if ((inputMap & ControllerPacket.LEFT_FLAG) != 0) {
-                    conn.sendMouseHScroll((byte) -1);
+                    inputSender.submit(() -> conn.sendMouseHScroll((byte) -1));
                 }
             }
 
-            conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
-                    (short)0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
+            final short fControllerNumber = controllerNumber;
+            final short fActiveMask = getActiveControllerMask();
+            inputSender.submit(() -> conn.sendControllerInput(fControllerNumber, fActiveMask,
+                    (short)0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0));
         }
         else {
-            conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
-                    inputMap,
-                    leftTrigger, rightTrigger,
-                    leftStickX, leftStickY,
-                    rightStickX, rightStickY);
+            final short fControllerNumber = controllerNumber;
+            final short fActiveMask = getActiveControllerMask();
+            final int fInputMap = inputMap;
+            final byte fLeftTrigger = leftTrigger;
+            final byte fRightTrigger = rightTrigger;
+            final short fLeftStickX = leftStickX;
+            final short fLeftStickY = leftStickY;
+            final short fRightStickX = rightStickX;
+            final short fRightStickY = rightStickY;
+            inputSender.submit(() -> conn.sendControllerInput(fControllerNumber, fActiveMask,
+                    fInputMap,
+                    fLeftTrigger, fRightTrigger,
+                    fLeftStickX, fLeftStickY,
+                    fRightStickX, fRightStickY));
         }
     }
 
@@ -1849,15 +1868,21 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private void sendEmulatedMouseMove(short x, short y) {
         Vector2d vector = convertRawStickAxisToPixelMovement(x, y);
         if (vector.getMagnitude() >= 1) {
-            conn.sendMouseMove((short)vector.getX(), (short)-vector.getY());
+            final short mouseDx = (short)vector.getX();
+            final short mouseDy = (short)-vector.getY();
+            inputSender.submit(() -> conn.sendMouseMove(mouseDx, mouseDy));
         }
     }
 
     private void sendEmulatedMouseScroll(short x, short y) {
         Vector2d vector = convertRawStickAxisToPixelMovement(x, y);
         if (vector.getMagnitude() >= 1) {
-            conn.sendMouseHighResScroll((short)vector.getY());
-            conn.sendMouseHighResHScroll((short)vector.getX());
+            final short scrollY = (short)vector.getY();
+            final short scrollX = (short)vector.getX();
+            inputSender.submit(() -> {
+                conn.sendMouseHighResScroll(scrollY);
+                conn.sendMouseHighResHScroll(scrollX);
+            });
         }
     }
 
@@ -2201,21 +2226,25 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                     }
                 }
 
+                // Compute values eagerly: Android recycles SensorEvent objects,
+                // so they must not be read later on the input worker thread.
+                final byte motionControllerNumber = (byte) controllerNumber;
+                final byte fMotionType = motionType;
                 if (motionType == MoonBridge.LI_MOTION_TYPE_GYRO) {
                     // Convert from rad/s to deg/s
-                    conn.sendControllerMotionEvent((byte) controllerNumber,
-                            motionType,
-                            sensorEvent.values[x] * xFactor * 57.2957795f,
-                            sensorEvent.values[y] * yFactor * 57.2957795f,
-                            sensorEvent.values[z] * zFactor * 57.2957795f);
+                    final float gx = sensorEvent.values[x] * xFactor * 57.2957795f;
+                    final float gy = sensorEvent.values[y] * yFactor * 57.2957795f;
+                    final float gz = sensorEvent.values[z] * zFactor * 57.2957795f;
+                    inputSender.submit(() -> conn.sendControllerMotionEvent(motionControllerNumber,
+                            fMotionType, gx, gy, gz));
                 }
                 else {
                     // Pass m/s^2 directly without conversion
-                    conn.sendControllerMotionEvent((byte) controllerNumber,
-                            motionType,
-                            sensorEvent.values[x] * xFactor,
-                            sensorEvent.values[y] * yFactor,
-                            sensorEvent.values[z] * zFactor);
+                    final float ax = sensorEvent.values[x] * xFactor;
+                    final float ay = sensorEvent.values[y] * yFactor;
+                    final float az = sensorEvent.values[z] * zFactor;
+                    inputSender.submit(() -> conn.sendControllerMotionEvent(motionControllerNumber,
+                            fMotionType, ax, ay, az));
                 }
             }
 
@@ -3177,8 +3206,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                 }
             }
 
-            conn.sendControllerArrivalEvent((byte)controllerNumber, getActiveControllerMask(),
-                    reportedType, supportedButtonFlags, capabilities);
+            final byte arrivalControllerNumber = (byte)controllerNumber;
+            final short arrivalActiveMask = getActiveControllerMask();
+            final byte fReportedType = reportedType;
+            final int fSupportedButtonFlags = supportedButtonFlags;
+            final short fCapabilities = capabilities;
+            inputSender.submit(() -> conn.sendControllerArrivalEvent(arrivalControllerNumber, arrivalActiveMask,
+                    fReportedType, fSupportedButtonFlags, fCapabilities));
 
             // After reporting arrival to the host, send initial battery state and begin monitoring
             backgroundThreadHandler.post(batteryStateUpdateRunnable);
@@ -3228,7 +3262,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                 gyroListener = null;
 
                 // Send a gyro event to ensure the virtual controller is stationary
-                conn.sendControllerMotionEvent((byte) controllerNumber, MoonBridge.LI_MOTION_TYPE_GYRO, 0.f, 0.f, 0.f);
+                inputSender.submit(() -> conn.sendControllerMotionEvent((byte) controllerNumber, MoonBridge.LI_MOTION_TYPE_GYRO, 0.f, 0.f, 0.f));
             }
             if (accelListener != null) {
                 sensorManager.unregisterListener(accelListener);
@@ -3258,8 +3292,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
         @Override
         public void sendControllerArrival() {
-            conn.sendControllerArrivalEvent((byte)controllerNumber, getActiveControllerMask(),
-                    device.getType(), device.getSupportedButtonFlags(), device.getCapabilities());
+            final byte arrivalControllerNumber = (byte)controllerNumber;
+            final short arrivalActiveMask = getActiveControllerMask();
+            final byte arrivalType = device.getType();
+            final int arrivalButtonFlags = device.getSupportedButtonFlags();
+            final short arrivalCapabilities = device.getCapabilities();
+            inputSender.submit(() -> conn.sendControllerArrivalEvent(arrivalControllerNumber, arrivalActiveMask,
+                    arrivalType, arrivalButtonFlags, arrivalCapabilities));
         }
     }
 }

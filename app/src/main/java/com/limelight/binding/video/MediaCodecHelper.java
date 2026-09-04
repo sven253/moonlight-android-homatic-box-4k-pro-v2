@@ -15,6 +15,7 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.ConfigurationInfo;
 import android.media.MediaCodec;
+import android.os.Bundle;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaCodecInfo.CodecCapabilities;
@@ -59,6 +60,7 @@ public class MediaCodecHelper {
     public static final int LL_FIX_MODE_VENDOR_LOW_LATENCY = 3;
     public static final int LL_FIX_MODE_OFF = 4;
     public static final int LL_FIX_MODE_COMBINED = 5;
+    public static final int LL_FIX_MODE_POST_START = 6;
     private static volatile int hevcLowLatencyFixMode = LL_FIX_MODE_SAFE;
     private static boolean isLowEndSnapdragon = false;
     private static boolean isAdreno620 = false;
@@ -554,6 +556,8 @@ public class MediaCodecHelper {
                 return "vendor.low-latency.enable only";
             case LL_FIX_MODE_COMBINED:
                 return "vdec-lowlatency + vendor.low-latency.enable";
+            case LL_FIX_MODE_POST_START:
+                return "post-start low-latency (setParameters)";
             case LL_FIX_MODE_OFF:
                 return "disabled (full upstream ladder)";
             case LL_FIX_MODE_SAFE:
@@ -570,6 +574,28 @@ public class MediaCodecHelper {
             videoFormat.setInteger(key, value);
         } catch (Exception e) {
             LimeLog.warning("Failed to set codec option " + key + "=" + value + ": " + e);
+        }
+    }
+
+    // Applies "low-latency" via setParameters() after the codec was started, if the
+    // post-start test mode is selected (technique observed in the derflacco fork:
+    // some decoder stacks only latch the option at runtime). Called from the
+    // renderer after every videoDecoder.start(), including watchdog restarts.
+    public static void applyPostStartLowLatencyIfRequested(MediaCodec videoDecoder, boolean affectedAmlogicHevcDecoder) {
+        if (!affectedAmlogicHevcDecoder || hevcLowLatencyFixMode != LL_FIX_MODE_POST_START) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            // MediaCodec.setParameters() requires API 19
+            return;
+        }
+        try {
+            Bundle params = new Bundle();
+            params.putInt("low-latency", 1);
+            videoDecoder.setParameters(params);
+            LimeLog.info("LL fix post-start: applied low-latency=1 via setParameters()");
+        } catch (Exception e) {
+            LimeLog.warning("LL fix post-start: setParameters failed: " + e);
         }
     }
 
@@ -651,6 +677,10 @@ public class MediaCodecHelper {
                     }
                     return applyPriorityOnlyFallback(videoFormat, tryNumber);
 
+                case LL_FIX_MODE_POST_START:
+                    // No low-latency options at configure() time. The low-latency
+                    // parameter is applied after start() via setParameters(); see
+                    // applyPostStartLowLatencyIfRequested().
                 case LL_FIX_MODE_SAFE:
                 default:
                     // Low-latency options break HEVC playback on affected Amlogic-based TV sticks,

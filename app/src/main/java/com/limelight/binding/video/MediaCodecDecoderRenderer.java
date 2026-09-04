@@ -573,6 +573,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // Start the decoder
         videoDecoder.start();
 
+        // Post-start low-latency test mode: some decoder stacks only latch the
+        // low-latency option at runtime rather than at configure() time.
+        MediaCodecHelper.applyPostStartLowLatencyIfRequested(videoDecoder, affectedAmlogicHevcDecoder);
+
         // A decoder start/restart creates a new decode timeline.
         // The output-stall watchdog is armed when real video input begins.
         lastVideoInputQueuedMs = 0;

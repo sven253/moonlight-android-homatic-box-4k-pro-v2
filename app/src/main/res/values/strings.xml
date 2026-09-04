@@ -256,6 +256,8 @@
     <string name="summary_checkbox_enable_perf_overlay_mini">Display compact performance information</string>
     <string name="title_checkbox_enable_android_tv_force_gpu_composition">Force GPU composition (Android TV)</string>
     <string name="summary_checkbox_enable_android_tv_force_gpu_composition">Fixes frame sync issues on some Android TV devices by forcing GPU composition updates.</string>
+    <string name="title_checkbox_enable_input_worker">Input worker thread</string>
+    <string name="summary_checkbox_enable_input_worker">Sends controller input from a dedicated background thread instead of the UI thread. Keeps the app responsive if the input send path ever stalls, so the stream can still be quit. Takes effect on the next stream.</string>
     <string name="title_list_low_latency_fix_mode">Amlogic HEVC freeze fix</string>
     <string name="summary_list_low_latency_fix_mode">Controls decoder low-latency options on affected Amlogic devices (Homatics Box 4K Pro V2, Mi TV Stick/Box). "Fix enabled" prevents freezes and black screens but adds decoding latency. The test modes enable one specific low-latency option each, to find one that works on your firmware. If the stream freezes or shows 0 FPS in a test mode, the built-in watchdog restarts the decoder after a few seconds. Takes effect on the next stream.</string>
     <string name="llfix_mode_safe">Fix enabled – no low-latency options (safe)</string>
@@ -263,6 +265,7 @@
     <string name="llfix_mode_vdec_lowlatency">Test: vdec-lowlatency only</string>
     <string name="llfix_mode_vendor_low_latency">Test: vendor.low-latency.enable only</string>
     <string name="llfix_mode_combined">Recommended: vdec-lowlatency + vendor.low-latency.enable</string>
+    <string name="llfix_mode_post_start">Test: KEY_LOW_LATENCY post-start (setParameters)</string>
     <string name="llfix_mode_off">Fix disabled – all low-latency options (may freeze)</string>
     <string name="title_enable_post_stream_toast">Show latency message after streaming</string>
     <string name="summary_enable_post_stream_toast">Display a latency information message after the stream ends</string>

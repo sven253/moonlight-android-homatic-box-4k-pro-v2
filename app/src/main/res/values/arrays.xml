@@ -101,6 +101,7 @@
         <item>@string/llfix_mode_vdec_lowlatency</item>
         <item>@string/llfix_mode_vendor_low_latency</item>
         <item>@string/llfix_mode_combined</item>
+        <item>@string/llfix_mode_post_start</item>
         <item>@string/llfix_mode_off</item>
     </string-array>
     <string-array name="low_latency_fix_mode_values" translatable="false">
@@ -109,6 +110,7 @@
         <item>vdec_lowlatency</item>
         <item>vendor_low_latency</item>
         <item>combined</item>
+        <item>post_start</item>
         <item>off</item>
     </string-array>
 
