@@ -130,7 +130,7 @@
             android:key="checkbox_enable_input_worker"
             android:title="@string/title_checkbox_enable_input_worker"
             android:summary="@string/summary_checkbox_enable_input_worker"
-            android:defaultValue="false" />
+            android:defaultValue="true" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/category_input_settings"
         android:key="category_input_settings">

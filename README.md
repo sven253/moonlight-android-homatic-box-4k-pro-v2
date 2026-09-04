@@ -19,6 +19,11 @@ The fork includes patches around:
 - Additional renderer/frame-pacing enhancements
 - Add support for Homatics Box 4K Pro V2
 - Original Moonlight Icons
+- Decoder stall watchdog that restarts the decoder automatically instead of requiring an app restart
+- Selectable Amlogic HEVC low-latency options (see below) for testing after firmware updates
+- Optional input worker thread that keeps the UI responsive if the input send path stalls
+- Updated moonlight-common-c (Feb 2026 upstream) with fixes for a Sunshine audio assert, two thread leaks and RTSP hardening
+- PTS-independent decode time measurement, so decode timings stay correct on decoders that don't echo the input PTS
 
 
 ## Default settings in this fork
@@ -29,6 +34,8 @@ Current defaults are tuned for the target device profile:
 - Codec preference: **HEVC**
 - Frame pacing: **Balanced**
 - Android TV force GPU composition: **Disabled**
+- Amlogic HEVC low-latency options: **No low-latency options (stable)**
+- Input worker thread: **Enabled**
 
 ## Tested configuration
 
@@ -40,7 +47,37 @@ Validated on:
 - Android TV force GPU composition: **Disabled**
 - Sunshine + Moonlight
 
-Low-latency mode can cause freezes on some affected configurations.
+## Amlogic HEVC low-latency findings (S905X5M-J)
+
+The decoder low-latency options are exposed as a setting (Settings -> Advanced -> *Amlogic HEVC low-latency options*)
+so each one can be tested individually. Measurements below are from a Homatics Box 4K Pro V2
+(Amlogic S905X5M-J, Android TV 14) streaming HEVC from Sunshine, using the in-app performance overlay:
+
+| Option | Result |
+| --- | --- |
+| No low-latency options (default) | ~10 ms decode time, stable |
+| `KEY_LOW_LATENCY` at `configure()` | No video output at all (black screen / 0 FPS) |
+| `KEY_LOW_LATENCY` via `setParameters()` after `start()` | Video works, but freezes intermittently |
+| `vdec-lowlatency` | No measurable latency gain, freezes intermittently |
+| `vendor.low-latency.enable` | No measurable latency gain, freezes intermittently |
+| Both vendor options combined | No measurable latency gain, freezes intermittently |
+| All options (stock Moonlight behavior) | No video output at all |
+
+Conclusions:
+
+- `KEY_LOW_LATENCY` is broken in this firmware's `c2.amlogic.hevc.decoder`, both at configure time
+  (output stops immediately) and at runtime (delayed stalls). This is why stock Moonlight shows a
+  black screen with HEVC on this device.
+- The Amlogic vendor low-latency keys do not reduce decode time measurably and destabilize the stream,
+  so they are disabled by default.
+- ~10 ms decode time appears to be the floor on current firmware. Getting closer to the 2-5 ms seen on
+  working devices requires a vendor BSP fix; it cannot be done from the app side.
+- Earlier builds of this fork appeared to show a ~2-3 ms gain from the vendor options. That was a
+  measurement artifact of the old PTS-based timing and disappeared once decode time measurement was
+  fixed. The non-default options are kept only so they can be re-tested after a firmware update.
+
+If a stream does freeze in one of the non-default modes, the built-in watchdog restarts the decoder
+after a few seconds instead of requiring an app restart.
 
 ## Known issues
 Mi TV Stick / Box:
@@ -48,7 +85,11 @@ Mi TV Stick / Box:
 - Smoothness may degrade when the large performance stats overlay is enabled.
 
 Homatics:
-- Streaming can still hang at random times
+- Streaming can still hang at random times when a non-default low-latency option is selected.
+  The watchdog recovers automatically after a few seconds.
+- Controller input stopped reaching the host after a long session in an older build (video and audio
+  kept running). The input worker thread and the updated moonlight-common-c input/locking fixes are
+  intended to address this; still under observation.
 
 ## TV settings recommendations
 

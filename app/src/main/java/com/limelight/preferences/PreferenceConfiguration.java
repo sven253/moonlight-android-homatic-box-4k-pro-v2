@@ -97,7 +97,7 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION = false;
     private static final boolean DEFAULT_ENABLE_LOW_LATENCY_FIX = true;
     private static final String DEFAULT_LOW_LATENCY_FIX_MODE = "safe";
-    private static final boolean DEFAULT_ENABLE_INPUT_WORKER = false;
+    private static final boolean DEFAULT_ENABLE_INPUT_WORKER = true;
 
     // Low-latency fix modes for affected Amlogic HEVC decoders.
     // Values match the entryValues of list_low_latency_fix_mode.
