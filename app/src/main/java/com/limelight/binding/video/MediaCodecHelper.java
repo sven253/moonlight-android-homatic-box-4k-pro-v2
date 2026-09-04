@@ -562,6 +562,17 @@ public class MediaCodecHelper {
         }
     }
 
+    // Defensive setter for MediaFormat options (approach borrowed from the Artemis fork):
+    // never lets an unexpected failure while setting an optional codec parameter
+    // abort decoder configuration.
+    private static void safeSet(MediaFormat videoFormat, String key, int value) {
+        try {
+            videoFormat.setInteger(key, value);
+        } catch (Exception e) {
+            LimeLog.warning("Failed to set codec option " + key + "=" + value + ": " + e);
+        }
+    }
+
     // Fallback for the bisection test modes: if configure() rejected the single
     // low-latency option on try 0, retry with realtime priority only before
     // giving up on low-latency options entirely.
@@ -591,7 +602,7 @@ public class MediaCodecHelper {
                     // Bisection: only the official Android 11+ low latency option.
                     if (tryNumber == 0) {
                         LimeLog.info("LL fix bisection: trying KEY_LOW_LATENCY only");
-                        videoFormat.setInteger("low-latency", 1);
+                        safeSet(videoFormat, "low-latency", 1);
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
                         }
@@ -603,7 +614,7 @@ public class MediaCodecHelper {
                     // Bisection: only the legacy ACodec vdec-lowlatency option.
                     if (tryNumber == 0) {
                         LimeLog.info("LL fix bisection: trying vdec-lowlatency only");
-                        videoFormat.setInteger("vdec-lowlatency", 1);
+                        safeSet(videoFormat, "vdec-lowlatency", 1);
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
                         }
@@ -616,7 +627,7 @@ public class MediaCodecHelper {
                     // format keys require Android 8.0+.
                     if (tryNumber == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         LimeLog.info("LL fix bisection: trying vendor.low-latency.enable only");
-                        videoFormat.setInteger("vendor.low-latency.enable", 1);
+                        safeSet(videoFormat, "vendor.low-latency.enable", 1);
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
                         }
@@ -629,9 +640,9 @@ public class MediaCodecHelper {
                     // (S905X5M-J) firmware; KEY_LOW_LATENCY is the one that breaks playback there.
                     if (tryNumber == 0) {
                         LimeLog.info("LL fix: using vdec-lowlatency + vendor.low-latency.enable (no KEY_LOW_LATENCY)");
-                        videoFormat.setInteger("vdec-lowlatency", 1);
+                        safeSet(videoFormat, "vdec-lowlatency", 1);
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            videoFormat.setInteger("vendor.low-latency.enable", 1);
+                            safeSet(videoFormat, "vendor.low-latency.enable", 1);
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
