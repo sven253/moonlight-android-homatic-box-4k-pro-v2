@@ -1,0 +1,134 @@
+diff --git a/README.md b/README.md
+index f567e777..d998d1cf 100644
+--- a/README.md
++++ b/README.md
+@@ -19,6 +19,11 @@ The fork includes patches around:
+ - Additional renderer/frame-pacing enhancements
+ - Add support for Homatics Box 4K Pro V2
+ - Original Moonlight Icons
++- Decoder stall watchdog that restarts the decoder automatically instead of requiring an app restart
++- Selectable Amlogic HEVC low-latency options (see below) for testing after firmware updates
++- Optional input worker thread that keeps the UI responsive if the input send path stalls
++- Updated moonlight-common-c (Feb 2026 upstream) with fixes for a Sunshine audio assert, two thread leaks and RTSP hardening
++- PTS-independent decode time measurement, so decode timings stay correct on decoders that don't echo the input PTS
+ 
+ 
+ ## Default settings in this fork
+@@ -29,6 +34,8 @@ Current defaults are tuned for the target device profile:
+ - Codec preference: **HEVC**
+ - Frame pacing: **Balanced**
+ - Android TV force GPU composition: **Disabled**
++- Amlogic HEVC low-latency options: **No low-latency options (stable)**
++- Input worker thread: **Enabled**
+ 
+ ## Tested configuration
+ 
+@@ -40,7 +47,37 @@ Validated on:
+ - Android TV force GPU composition: **Disabled**
+ - Sunshine + Moonlight
+ 
+-Low-latency mode can cause freezes on some affected configurations.
++## Amlogic HEVC low-latency findings (S905X5M-J)
++
++The decoder low-latency options are exposed as a setting (Settings -> Advanced -> *Amlogic HEVC low-latency options*)
++so each one can be tested individually. Measurements below are from a Homatics Box 4K Pro V2
++(Amlogic S905X5M-J, Android TV 14) streaming HEVC from Sunshine, using the in-app performance overlay:
++
++| Option | Result |
++| --- | --- |
++| No low-latency options (default) | ~10 ms decode time, stable |
++| `KEY_LOW_LATENCY` at `configure()` | No video output at all (black screen / 0 FPS) |
++| `KEY_LOW_LATENCY` via `setParameters()` after `start()` | Video works, but freezes intermittently |
++| `vdec-lowlatency` | No measurable latency gain, freezes intermittently |
++| `vendor.low-latency.enable` | No measurable latency gain, freezes intermittently |
++| Both vendor options combined | No measurable latency gain, freezes intermittently |
++| All options (stock Moonlight behavior) | No video output at all |
++
++Conclusions:
++
++- `KEY_LOW_LATENCY` is broken in this firmware's `c2.amlogic.hevc.decoder`, both at configure time
++  (output stops immediately) and at runtime (delayed stalls). This is why stock Moonlight shows a
++  black screen with HEVC on this device.
++- The Amlogic vendor low-latency keys do not reduce decode time measurably and destabilize the stream,
++  so they are disabled by default.
++- ~10 ms decode time appears to be the floor on current firmware. Getting closer to the 2-5 ms seen on
++  working devices requires a vendor BSP fix; it cannot be done from the app side.
++- Earlier builds of this fork appeared to show a ~2-3 ms gain from the vendor options. That was a
++  measurement artifact of the old PTS-based timing and disappeared once decode time measurement was
++  fixed. The non-default options are kept only so they can be re-tested after a firmware update.
++
++If a stream does freeze in one of the non-default modes, the built-in watchdog restarts the decoder
++after a few seconds instead of requiring an app restart.
+ 
+ ## Known issues
+ Mi TV Stick / Box:
+@@ -48,7 +85,11 @@ Mi TV Stick / Box:
+ - Smoothness may degrade when the large performance stats overlay is enabled.
+ 
+ Homatics:
+-- Streaming can still hang at random times
++- Streaming can still hang at random times when a non-default low-latency option is selected.
++  The watchdog recovers automatically after a few seconds.
++- Controller input stopped reaching the host after a long session in an older build (video and audio
++  kept running). The input worker thread and the updated moonlight-common-c input/locking fixes are
++  intended to address this; still under observation.
+ 
+ ## TV settings recommendations
+ 
+diff --git a/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java b/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
+index d901805f..7e57e57f 100644
+--- a/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
++++ b/app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java
+@@ -97,7 +97,7 @@ public class PreferenceConfiguration {
+     private static final boolean DEFAULT_ENABLE_ANDROID_TV_FORCE_GPU_COMPOSITION = false;
+     private static final boolean DEFAULT_ENABLE_LOW_LATENCY_FIX = true;
+     private static final String DEFAULT_LOW_LATENCY_FIX_MODE = "safe";
+-    private static final boolean DEFAULT_ENABLE_INPUT_WORKER = false;
++    private static final boolean DEFAULT_ENABLE_INPUT_WORKER = true;
+ 
+     // Low-latency fix modes for affected Amlogic HEVC decoders.
+     // Values match the entryValues of list_low_latency_fix_mode.
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 9bb98663..e9a3a037 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -257,16 +257,16 @@
+     <string name="title_checkbox_enable_android_tv_force_gpu_composition">Force GPU composition (Android TV)</string>
+     <string name="summary_checkbox_enable_android_tv_force_gpu_composition">Fixes frame sync issues on some Android TV devices by forcing GPU composition updates.</string>
+     <string name="title_checkbox_enable_input_worker">Input worker thread</string>
+-    <string name="summary_checkbox_enable_input_worker">Sends controller input from a dedicated background thread instead of the UI thread. Keeps the app responsive if the input send path ever stalls, so the stream can still be quit. Takes effect on the next stream.</string>
+-    <string name="title_list_low_latency_fix_mode">Amlogic HEVC freeze fix</string>
+-    <string name="summary_list_low_latency_fix_mode">Controls decoder low-latency options on affected Amlogic devices (Homatics Box 4K Pro V2, Mi TV Stick/Box). "Fix enabled" prevents freezes and black screens but adds decoding latency. The test modes enable one specific low-latency option each, to find one that works on your firmware. If the stream freezes or shows 0 FPS in a test mode, the built-in watchdog restarts the decoder after a few seconds. Takes effect on the next stream.</string>
+-    <string name="llfix_mode_safe">Fix enabled – no low-latency options (safe)</string>
+-    <string name="llfix_mode_key_low_latency">Test: KEY_LOW_LATENCY only</string>
+-    <string name="llfix_mode_vdec_lowlatency">Test: vdec-lowlatency only</string>
+-    <string name="llfix_mode_vendor_low_latency">Test: vendor.low-latency.enable only</string>
+-    <string name="llfix_mode_combined">Recommended: vdec-lowlatency + vendor.low-latency.enable</string>
+-    <string name="llfix_mode_post_start">Test: KEY_LOW_LATENCY post-start (setParameters)</string>
+-    <string name="llfix_mode_off">Fix disabled – all low-latency options (may freeze)</string>
++    <string name="summary_checkbox_enable_input_worker">Sends controller input from a dedicated background thread instead of the UI thread. Keeps the app responsive if the input send path ever stalls, so the stream can still be quit. Disable this to restore the original behavior. Takes effect on the next stream.</string>
++    <string name="title_list_low_latency_fix_mode">Amlogic HEVC low-latency options</string>
++    <string name="summary_list_low_latency_fix_mode">Controls which decoder low-latency options are used on affected Amlogic devices (Homatics Box 4K Pro V2, Mi TV Stick/Box). The default disables all of them, which is the only stable setting on current firmware and costs no measurable decoding latency. The other options are for testing after a firmware update; on current firmware they cause freezes or no video at all. If a stream freezes, the built-in watchdog restarts the decoder after a few seconds. Takes effect on the next stream.</string>
++    <string name="llfix_mode_safe">No low-latency options (stable)</string>
++    <string name="llfix_mode_key_low_latency">KEY_LOW_LATENCY only (probably no video output)</string>
++    <string name="llfix_mode_vdec_lowlatency">vdec-lowlatency only (may freeze)</string>
++    <string name="llfix_mode_vendor_low_latency">vendor.low-latency.enable only (may freeze)</string>
++    <string name="llfix_mode_combined">vdec-lowlatency + vendor.low-latency.enable (may freeze)</string>
++    <string name="llfix_mode_post_start">KEY_LOW_LATENCY via setParameters (may freeze)</string>
++    <string name="llfix_mode_off">All low-latency options (probably no video output)</string>
+     <string name="title_enable_post_stream_toast">Show latency message after streaming</string>
+     <string name="summary_enable_post_stream_toast">Display a latency information message after the stream ends</string>
+ 
+diff --git a/app/src/main/res/xml/preferences.xml b/app/src/main/res/xml/preferences.xml
+index 4f3f76de..31c77dbb 100644
+--- a/app/src/main/res/xml/preferences.xml
++++ b/app/src/main/res/xml/preferences.xml
+@@ -130,7 +130,7 @@
+             android:key="checkbox_enable_input_worker"
+             android:title="@string/title_checkbox_enable_input_worker"
+             android:summary="@string/summary_checkbox_enable_input_worker"
+-            android:defaultValue="false" />
++            android:defaultValue="true" />
+     </PreferenceCategory>
+     <PreferenceCategory android:title="@string/category_input_settings"
+         android:key="category_input_settings">
