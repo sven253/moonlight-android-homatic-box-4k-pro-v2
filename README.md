@@ -79,17 +79,6 @@ Conclusions:
 If a stream does freeze in one of the non-default modes, the built-in watchdog restarts the decoder
 after a few seconds instead of requiring an app restart.
 
-## Known issues
-Mi TV Stick / Box:
-- Streaming can still hang at random times.
-- Smoothness may degrade when the large performance stats overlay is enabled.
-
-Homatics:
-- Streaming can still hang at random times when a non-default low-latency option is selected.
-  The watchdog recovers automatically after a few seconds.
-- Controller input stopped reaching the host after a long session in an older build (video and audio
-  kept running). The input worker thread and the updated moonlight-common-c input/locking fixes are
-  intended to address this; still under observation.
 
 ## TV settings recommendations
 
@@ -109,6 +98,3 @@ To reduce latency, it is recommended to:
 
 ## Development note
 In the release verison i hust changed AppIcons back to moonlight default and added support for Homatics Box 4K Pro V2.
-
-## Beta
-I added a watchdog to detect freezes and restart the decoder and added this patch https://github.com/moonlight-stream/moonlight-common-c/pull/147. Coded with Ai. No known issues with beta but still testig! Android TV force GPU composition have to be disabled to stop freezes.
