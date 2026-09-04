@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -99,6 +100,49 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private static final int CR_RECOVERY_TYPE_RESTART = 2;
     private static final int CR_RECOVERY_TYPE_RESET = 3;
     private AtomicInteger codecRecoveryType = new AtomicInteger(CR_RECOVERY_TYPE_NONE);
+
+    // PTS-independent decode time measurement: FIFO of enqueue timestamps for
+    // in-flight video frames. Some decoders (notably the Amlogic HEVC decoder in
+    // low-latency mode) do not echo the input PTS on output buffers, which broke
+    // the previous PTS-based measurement and showed 0.0 ms decode time.
+    private final ConcurrentLinkedQueue<Long> inFlightFrameEnqueueTimes = new ConcurrentLinkedQueue<>();
+    private final AtomicInteger inFlightFrameCount = new AtomicInteger(0);
+
+    // Called on the input thread for every queued non-CSD video buffer.
+    private void recordVideoFrameEnqueued() {
+        // Bound the queue so a stalled decoder can't grow it indefinitely.
+        // 240 entries = 4 seconds at 60 FPS; the stall watchdog fires earlier.
+        if (inFlightFrameCount.get() >= 240) {
+            if (inFlightFrameEnqueueTimes.poll() != null) {
+                inFlightFrameCount.decrementAndGet();
+            }
+        }
+        inFlightFrameEnqueueTimes.add(SystemClock.uptimeMillis());
+        inFlightFrameCount.incrementAndGet();
+    }
+
+    // Called on the renderer thread for every dequeued output frame.
+    private void recordVideoFrameDequeued() {
+        Long enqueueTime = inFlightFrameEnqueueTimes.poll();
+        if (enqueueTime == null) {
+            return;
+        }
+        inFlightFrameCount.decrementAndGet();
+
+        long delta = SystemClock.uptimeMillis() - enqueueTime;
+        // Exclude probable outliers (e.g. frames that spanned a codec recovery)
+        if (delta >= 0 && delta < 1000) {
+            activeWindowVideoStats.decoderTimeMs += delta;
+            if (!USE_FRAME_RENDER_TIME) {
+                activeWindowVideoStats.totalTimeMs += delta;
+            }
+        }
+    }
+
+    private void clearInFlightFrameTimes() {
+        inFlightFrameEnqueueTimes.clear();
+        inFlightFrameCount.set(0);
+    }
     private final Object codecRecoveryMonitor = new Object();
 
     // Each thread that touches the MediaCodec object or any associated buffers must have a flag
@@ -583,6 +627,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         lastVideoOutputDequeuedMs = 0;
         lastVideoInputResumeMs = 0;
         lastCodecRenderTimeNanos = 0;
+        clearInFlightFrameTimes();
         
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             legacyInputBuffers = videoDecoder.getInputBuffers();
@@ -790,6 +835,7 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                 nextInputBuffer = null;
                 nextInputBufferIndex = -1;
                 outputBufferQueue.clear();
+                clearInFlightFrameTimes();
 
                 // If we just need a flush, do so now with all threads quiesced.
                 if (codecRecoveryType.get() == CR_RECOVERY_TYPE_FLUSH) {
@@ -1206,11 +1252,11 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                         int outIndex = videoDecoder.dequeueOutputBuffer(info, 50000);
                         if (outIndex >= 0) {
                             lastVideoOutputDequeuedMs = SystemClock.uptimeMillis();
-                        
-                            long presentationTimeUs = info.presentationTimeUs;
+
                             int lastIndex = outIndex;
 
                             numFramesOut++;
+                            recordVideoFrameDequeued();
 
                             // Render the latest frame now if frame pacing isn't in balanced mode
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
@@ -1219,9 +1265,9 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                                     videoDecoder.releaseOutputBuffer(lastIndex, false);
 
                                     numFramesOut++;
+                                    recordVideoFrameDequeued();
 
                                     lastIndex = outIndex;
-                                    presentationTimeUs = info.presentationTimeUs;
                                 }
 
                                 if (prefs.framePacing == PreferenceConfiguration.FRAME_PACING_MAX_SMOOTHNESS ||
@@ -1280,14 +1326,8 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                                 outputBufferQueue.add(lastIndex);
                             }
 
-                            // Add delta time to the totals (excluding probable outliers)
-                            long delta = SystemClock.uptimeMillis() - (presentationTimeUs / 1000);
-                            if (delta >= 0 && delta < 1000) {
-                                activeWindowVideoStats.decoderTimeMs += delta;
-                                if (!USE_FRAME_RENDER_TIME) {
-                                    activeWindowVideoStats.totalTimeMs += delta;
-                                }
-                            }
+                            // Decode time accounting now happens per dequeued frame in
+                            // recordVideoFrameDequeued(), independent of PTS echo behavior.
                         } else {
                             switch (outIndex) {
                                 case MediaCodec.INFO_TRY_AGAIN_LATER:
@@ -1532,6 +1572,8 @@ lastCodecRenderTimeNanos = renderTimeNanos;
                 }
             
                 lastVideoInputQueuedMs = now;
+
+                recordVideoFrameEnqueued();
             }
             
             // We need a new buffer now
@@ -1938,7 +1980,12 @@ lastCodecRenderTimeNanos = renderTimeNanos;
             }
         }
 
-        long timestampUs = enqueueTimeMs * 1000;
+        // NB: Use the local uptime clock for the PTS rather than the enqueueTimeMs value
+        // from moonlight-common-c. Since the Feb 2026 common-c update, its timestamps are
+        // relative to stream start instead of absolute CLOCK_MONOTONIC, which broke all
+        // comparisons against SystemClock.uptimeMillis() (decode time showed 0.0 ms and
+        // render-time latency samples were silently discarded).
+        long timestampUs = SystemClock.uptimeMillis() * 1000;
         if (timestampUs <= lastTimestampUs) {
             // We can't submit multiple buffers with the same timestamp
             // so bump it up by one before queuing
