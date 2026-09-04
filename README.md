@@ -1,9 +1,6 @@
 <h1 align="center">Moonlight Android Fork for Homatics Box 4K Pro V2</h1>
 
-This repository is a fork of **Moonlight Android Fork of Farnsworth3010** with device-focused fixes for **Mi TV Stick 4K Gen 2**, **Mi TV Box S 3rd Gen** and **Homatics Box 4K Pro V2** mainly for:
-
-- HEVC streaming stability/compatibility (including slideshow fix during HEVC streaming)
-- GPU composition behavior on Android TV
+This repository is a fork of **Moonlight Android Fork of Farnsworth3010** with device-focused fixes for **Mi TV Stick 4K Gen 2**, **Mi TV Box S 3rd Gen** and **Homatics Box 4K Pro V2**
 
 ## What is changed in this fork
 
