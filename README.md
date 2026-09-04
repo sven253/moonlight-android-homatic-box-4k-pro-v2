@@ -23,6 +23,7 @@ The fork includes patches around:
 - Selectable Amlogic HEVC low-latency options (see below) for testing after firmware updates
 - Optional input worker thread that keeps the UI responsive if the input send path stalls
 - Updated moonlight-common-c (Feb 2026 upstream) with fixes for a Sunshine audio assert, two thread leaks and RTSP hardening
+- [moonlight-common-c PR #147](https://github.com/moonlight-stream/moonlight-common-c/pull/147) (still open upstream, carried in this fork): requests an IDR frame when the FEC queue reports a loss without RFI. Without it, a single reordered packet freezes the video for ~2 seconds while audio keeps playing — this fork disables RFI on Amlogic, so it always takes that path
 - PTS-independent decode time measurement, so decode timings stay correct on decoders that don't echo the input PTS
 
 
@@ -66,8 +67,8 @@ so each one can be tested individually. Measurements below are from a Homatics B
 Conclusions:
 
 - `KEY_LOW_LATENCY` is broken in this firmware's `c2.amlogic.hevc.decoder`, both at configure time
-  (output stops immediately) and at runtime (delayed stalls). This is why stock Moonlight shows a
-  black screen with HEVC on this device.
+  (no video output at all) and at runtime (video degrades to ~1 FPS shortly after start). This is
+  why stock Moonlight shows a black screen with HEVC on this device.
 - The Amlogic vendor low-latency keys do not reduce decode time measurably and destabilize the stream,
   so they are disabled by default.
 - ~10 ms decode time appears to be the floor on current firmware. Getting closer to the 2-5 ms seen on
@@ -79,6 +80,15 @@ Conclusions:
 If a stream does freeze in one of the non-default modes, the built-in watchdog restarts the decoder
 after a few seconds instead of requiring an app restart.
 
+## Known issues
+
+Mi TV Stick / Box (not re-tested against the current build):
+- Streaming can still hang at random times.
+- Smoothness may degrade when the large performance stats overlay is enabled.
+
+Homatics Box 4K Pro V2:
+- Selecting a non-default low-latency option causes freezes or no video; the watchdog recovers after a few seconds.
+- Controller input stopped reaching the host after a long session in an older build, while video and audio kept running. The input worker thread and the updated moonlight-common-c input/locking fixes are intended to address this; still under observation.
 
 ## TV settings recommendations
 
@@ -97,4 +107,6 @@ To reduce latency, it is recommended to:
 - [Farnsworth3010/moonlight-android-mi-tv-stick-gen-2](https://github.com/farnsworth3010/moonlight-android-mi-tv-stick-gen-2)
 
 ## Development note
-In the release verison i hust changed AppIcons back to moonlight default and added support for Homatics Box 4K Pro V2.
+Release version: app icons restored to the Moonlight defaults and support added for the Homatics Box 4K Pro V2.
+Later work (decoder stall watchdog, selectable low-latency options, moonlight-common-c update, input worker thread,
+decode time measurement fix) was developed with AI assistance and tested on a Homatics Box 4K Pro V2.
